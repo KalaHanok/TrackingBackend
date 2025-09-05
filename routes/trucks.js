@@ -287,51 +287,6 @@ const path = require("path");
 const fs = require("fs");
 const mqtt = require("mqtt");
 
-// ====================== MQTT SETUP ====================== //
-
-const client = mqtt.connect("mqtt://broker.hivemq.com:1883");
-
-client.on("connect", () => {
-  console.log("✅ Connected to HiveMQ public broker");
-  client.subscribe("gps/data", (err) => {
-    if (!err) {
-      console.log("📡 Subscribed to gps/data");
-    } else {
-      console.error("❌ Subscription error:", err);
-    }
-  });
-});
-
-client.on("message", (topic, message) => {
-  try {
-    const data = JSON.parse(message.toString());
-    console.log("📥 Truck MQTT data:", data);
-
-    // Update trucks table with latest GPS data
-    const sql = `
-      UPDATE trucks
-      SET latitude = ?, longitude = ?, last_update = ?
-      WHERE id = ?
-    `;
-
-    db.query(sql, [
-      data.latitude,
-      data.longitude,
-      new Date(data.timestamp || Date.now()),
-      data.truck_id
-    ], (err) => {
-      if (err) {
-        console.error("❌ DB Update Error (truck GPS):", err);
-      } else {
-        console.log(`✅ Truck ${data.truck_id} location updated: (${data.latitude}, ${data.longitude})`);
-      }
-    });
-
-  } catch (err) {
-    console.error("❌ MQTT JSON Parse Error:", err.message);
-  }
-});
-
 // ====================== IMAGE UPLOAD SETUP ====================== //
 
 const uploadDir = "uploads/";
@@ -362,7 +317,7 @@ const upload = multer({ storage });
 
 // Get all trucks
 router.get("/", (req, res) => {
-  const sql = "SELECT id, name, role, description, image_url, latitude, longitude FROM trucks";
+  const sql = "SELECT id, name, role, description, image_url, latitude, longitude, device_id, speed, status, battery_level FROM trucks";
   db.query(sql, (err, results) => {
     if (err) return res.status(500).json({ error: "Database error" });
     res.json(results);
@@ -372,11 +327,10 @@ router.get("/", (req, res) => {
 // Get truck by ID with logs + tracker data + latest location
 router.get("/:id", (req, res) => {
   const truckId = req.params.id;
-  const { date } = req.query; // YYYY-MM-DD from frontend
+  const { date } = req.query;
 
   const truckSql = "SELECT * FROM trucks WHERE id = ?";
 
-  // Logs query
   let logsSql = `
     SELECT 
       id,
@@ -398,7 +352,6 @@ router.get("/:id", (req, res) => {
   }
   logsSql += " ORDER BY log_time;";
 
-  // Tracker query
   let trackerSql = `
     SELECT 
       id,
@@ -427,7 +380,6 @@ router.get("/:id", (req, res) => {
   }
   trackerSql += " ORDER BY timestamp DESC LIMIT 1;";
 
-  // Latest location query
   let latestLocationSql = `
     SELECT latitude, longitude, last_update
     FROM trucks
@@ -481,5 +433,56 @@ router.post("/", upload.single("image"), (req, res) => {
   });
 });
 
+// ====================== MQTT LISTENER FOR TRUCK GPS ====================== //
+
+const mqttClient = mqtt.connect("mqtt://broker.hivemq.com:1883");
+
+mqttClient.on("connect", () => {
+  console.log("✅ Connected to MQTT broker for trucks");
+  mqttClient.subscribe("gps/data", (err) => {
+    if (!err) console.log("📡 Subscribed to gps/data for trucks");
+    else console.error("❌ MQTT subscription error:", err);
+  });
+});
+
+mqttClient.on("message", (topic, message) => {
+  try {
+    const data = JSON.parse(message.toString());
+    console.log("📥 Received MQTT truck data:", data);
+
+    // Update truck fields from MQTT
+    const updateSql = `
+      UPDATE trucks
+      SET
+        device_id = ?,
+        latitude = ?,
+        longitude = ?,
+        speed = ?,
+        status = ?,
+        battery_level = ?,
+        last_update = ?
+      WHERE id = ?
+    `;
+
+    db.query(updateSql, [
+      data.device_id || null,
+      data.latitude || null,
+      data.longitude || null,
+      data.speed || null,
+      data.status || null,
+      data.battery_level || null,
+      new Date(data.timestamp || Date.now()),
+      data.truck_id
+    ], (err) => {
+      if (err) console.error("❌ DB update error from MQTT:", err);
+      else console.log(`✅ Truck ${data.truck_id} updated from MQTT`);
+    });
+
+  } catch (err) {
+    console.error("❌ MQTT JSON parse error:", err.message);
+  }
+});
+
 module.exports = router;
+
 
