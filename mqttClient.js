@@ -1,39 +1,29 @@
 const mqtt = require("mqtt");
 
-// Connect to HiveMQ public broker on TCP
-const client = mqtt.connect("mqtt://broker.hivemq.com:1883");
+//const clientId = "nodeClient_" + Math.random().toString(16).substr(2, 8);
 
-// Topic to subscribe to
-const topic = "beacons/data";
+const brokerUrl = "mqtt://broker.hivemq.com:1883"; // TCP for Node.js
 
-// Handle connection
+const client = mqtt.connect(brokerUrl, {
+  //clientId,
+  clean: true,
+  connectTimeout: 4000,
+  reconnectPeriod: 1000,
+});
+
 client.on("connect", () => {
-  console.log("✅ Connected to HiveMQ public broker");
+  //console.log("✅ Connected to HiveMQ with clientId:", clientId);
 
-  // Subscribe to the topic
-  client.subscribe(topic, (err) => {
-    if (err) {
-      console.error("❌ Subscription error:", err);
-    } else {
-      console.log(`📡 Subscribed to topic: ${topic}`);
-      console.log("Waiting for incoming messages...\n");
-    }
+  client.subscribe(["gps/data", "beacons/data"], (err) => {
+    if (err) console.error("❌ Subscription error:", err);
+    else console.log("📡 Subscribed to gps/data & beacons/data");
   });
 });
 
-// Handle incoming messages
-client.on("message", (receivedTopic, message) => {
-  if (receivedTopic === topic) {
-    try {
-      const data = JSON.parse(message.toString());
-      console.log("📥 Message received:", data);
-    } catch (err) {
-      console.log("📥 Message received (raw):", message.toString());
-    }
-  }
+client.on("message", (topic, message) => {
+  console.log(`📥 ${topic}:`, message.toString());
 });
 
-// Handle errors
 client.on("error", (err) => {
   console.error("❌ MQTT error:", err);
 });
