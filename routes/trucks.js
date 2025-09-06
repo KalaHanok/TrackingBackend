@@ -279,5 +279,91 @@ router.post("/", upload.single("image"), (req, res) => {
 
 module.exports = router;
 
+const mqtt = require("mqtt");
+
+// Connect to MQTT broker
+const client = mqtt.connect("mqtt://broker.hivemq.com:1883");
+
+client.on("connect", () => {
+  console.log("✅ Connected to MQTT broker");
+  client.subscribe("trucks/gps", (err) => {
+    if (err) console.error("Subscription error:", err);
+  });
+});
+
+client.on("message", (topic, message) => {
+  try {
+    const data = JSON.parse(message.toString());
+
+    const {
+      truck_id,
+      device_id,
+      timestamp,
+      latitude,
+      longitude,
+      speed_kmph,
+      ignition,
+      battery_level,
+      signal_strength,
+    } = data;
+
+    // Insert raw tracker data
+    const trackerSql = `
+      INSERT INTO truck_tracker_data
+      (truck_id, device_id, timestamp, latitude, longitude, speed_kmph, ignition, battery_level, signal_strength)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `;
+    db.query(
+      trackerSql,
+      [truck_id, device_id, timestamp, latitude, longitude, speed_kmph, ignition, battery_level, signal_strength],
+      (err) => {
+        if (err) console.error("Error inserting tracker data:", err);
+      }
+    );
+
+    // Determine today date
+    const today = new Date(timestamp).toISOString().split("T")[0];
+
+    // Check if a row exists in truck_logs for this truck today
+    const checkSql = `
+      SELECT * FROM truck_logs
+      WHERE truck_id = ? AND DATE(log_time) = ?
+      LIMIT 1
+    `;
+
+    db.query(checkSql, [truck_id, today], (err, results) => {
+      if (err) return console.error("DB error:", err);
+
+      if (results.length) {
+        // Update existing row
+        const log = results[0];
+        const newHoursWorked = log.hours_worked + 1; // Example: increment by 1 hour or calculate from speed/time
+        const newDistance = log.distance_travelled + (speed_kmph || 0) * 1; // Example: simple km increment
+        const updateSql = `
+          UPDATE truck_logs
+          SET hours_worked = ?, distance_travelled = ?, current_location = ?
+          WHERE id = ?
+        `;
+        db.query(updateSql, [newHoursWorked, newDistance, `${latitude},${longitude}`, log.id], (err2) => {
+          if (err2) console.error("Error updating truck_logs:", err2);
+        });
+      } else {
+        // Insert new row for today
+        const insertSql = `
+          INSERT INTO truck_logs
+          (truck_id, current_location, hours_worked, distance_travelled, log_time)
+          VALUES (?, ?, ?, ?, ?)
+        `;
+        db.query(insertSql, [truck_id, `${latitude},${longitude}`, 1, 0, timestamp], (err3) => {
+          if (err3) console.error("Error inserting truck_logs:", err3);
+        });
+      }
+    });
+  } catch (error) {
+    console.error("Error processing MQTT message:", error);
+  }
+});
+
+
 
 

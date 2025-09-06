@@ -106,14 +106,13 @@ if (!fs.existsSync(uploadDir)) {
   fs.mkdirSync(uploadDir);
 }
 
-// Custom storage engine
+// Custom storage engine for multer
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
     cb(null, uploadDir);
   },
   filename: async (req, file, cb) => {
     try {
-      // Get the next worker ID from DB
       db.query("SELECT MAX(id) AS maxId FROM workers", (err, result) => {
         if (err) {
           console.error("DB error while generating filename:", err);
@@ -132,6 +131,8 @@ const storage = multer.diskStorage({
 
 const upload = multer({ storage });
 
+// ----------------- ROUTES ------------------
+
 // Get all workers
 router.get("/", (req, res) => {
   const sql = "SELECT id, name, role, description, image_url FROM workers";
@@ -141,20 +142,24 @@ router.get("/", (req, res) => {
   });
 });
 
-// Get worker by ID with logs
+// Get worker by ID with optional date filter
 router.get("/:id", (req, res) => {
   const workerId = req.params.id;
+  const date = req.query.date; // optional query param YYYY-MM-DD
 
   const workerSql = "SELECT * FROM workers WHERE id = ?";
-  const logsSql =
-    "SELECT work_date, hours_worked FROM work_logs WHERE worker_id = ? ORDER BY work_date";
+  const logsBaseSql = "SELECT work_date, hours_worked FROM work_logs WHERE worker_id = ?";
+  const logsSql = date
+    ? logsBaseSql + " AND work_date = ? ORDER BY work_date"
+    : logsBaseSql + " ORDER BY work_date";
 
   db.query(workerSql, [workerId], (err, workerResults) => {
     if (err) return res.status(500).json({ error: "Database error" });
     if (workerResults.length === 0)
       return res.status(404).json({ error: "Worker not found" });
 
-    db.query(logsSql, [workerId], (err2, logResults) => {
+    const params = date ? [workerId, date] : [workerId];
+    db.query(logsSql, params, (err2, logResults) => {
       if (err2) return res.status(500).json({ error: "Database error" });
 
       res.json({
