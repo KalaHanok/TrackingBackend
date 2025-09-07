@@ -161,7 +161,6 @@ router.get("/", (req, res) => {
 });
 
 // Get truck by ID with logs + tracker data + latest location
-// Get truck by ID with logs + tracker data + latest location
 router.get("/:id", (req, res) => {
   const truckId = req.params.id;
 
@@ -203,7 +202,7 @@ router.get("/:id", (req, res) => {
         if (err3) return res.status(500).json({ error: "Database error" });
 
         // Ensure tracker lat/lng are numbers
-        const safeTracker = trackerResults.map(t => ({
+        const safeTracker = trackerResults.map((t) => ({
           ...t,
           latitude: t.latitude !== null ? parseFloat(t.latitude) : 0,
           longitude: t.longitude !== null ? parseFloat(t.longitude) : 0,
@@ -235,7 +234,6 @@ router.get("/:id", (req, res) => {
   });
 });
 
-
 // Add a new truck
 router.post("/", upload.single("image"), (req, res) => {
   const { name, role, description } = req.body;
@@ -264,7 +262,7 @@ const client = mqtt.connect("mqtt://broker.hivemq.com:1883");
 
 client.on("connect", () => {
   console.log("✅ Connected to MQTT broker");
-  client.subscribe("trucks/gps", (err) => {
+  client.subscribe("gps/data", (err) => {
     if (err) console.error("Subscription error:", err);
   });
 });
@@ -273,94 +271,119 @@ client.on("message", (topic, message) => {
   try {
     const data = JSON.parse(message.toString());
 
-    const {
-      truck_id,
-      device_id,
-      timestamp,
-      latitude,
-      longitude,
-      speed_kmph,
-      ignition,
-      battery_level,
-      signal_strength,
-    } = data;
+    const { device_id, timestamp, location, status, event } = data;
 
-    // Insert raw tracker data
-    const trackerSql = `
-      INSERT INTO truck_tracker_data
-      (truck_id, device_id, timestamp, latitude, longitude, speed_kmph, ignition, battery_level, signal_strength)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `;
-    db.query(
-      trackerSql,
-      [truck_id, device_id, timestamp, latitude, longitude, speed_kmph, ignition, battery_level, signal_strength],
-      (err) => {
-        if (err) console.error("Error inserting tracker data:", err);
+    // 🔹 Get truck_id from mapping table
+    const getTruckIdSql = "SELECT truck_id FROM truck_devices WHERE device_id = ?";
+    db.query(getTruckIdSql, [device_id], (err, result) => {
+      if (err) return console.error("❌ Error fetching truck_id:", err);
+      if (!result.length) {
+        return console.warn(`⚠️ No truck mapped for device_id ${device_id}`);
       }
-    );
 
-    // Today's date
-    const today = new Date(timestamp).toISOString().split("T")[0];
+      const truck_id = result[0].truck_id;
 
-    // Check existing daily log
-    const checkSql = `
-      SELECT * FROM truck_logs
-      WHERE truck_id = ? AND DATE(log_time) = ?
-      ORDER BY log_time DESC
-      LIMIT 1
-    `;
+      // ================= Insert tracker data =================
+      const trackerSql = `
+        INSERT INTO truck_tracker_data
+        (truck_id, device_id, timestamp, latitude, longitude, altitude,
+         speed_kmph, heading_degrees, ignition, battery_level, signal_strength,
+         gps_fix, event_type, event_description, geofence_alert)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `;
 
-    db.query(checkSql, [truck_id, today], (err, results) => {
-      if (err) return console.error("DB error:", err);
+      db.query(
+        trackerSql,
+        [
+          truck_id,
+          device_id,
+          timestamp,
+          location.latitude,
+          location.longitude,
+          location.altitude,
+          location.speed_kmph,
+          location.heading_degrees,
+          status.ignition,
+          status.battery_level,
+          status.signal_strength,
+          status.gps_fix,
+          event.type,
+          event.description,
+          event.geofence_alert,
+        ],
+        (err2) => {
+          if (err2) console.error("❌ Error inserting tracker data:", err2);
+        }
+      );
 
-      if (results.length) {
-        // Update existing row
-        const log = results[0];
+      // ================= Insert/Update logs =================
+      const today = new Date(timestamp).toISOString().split("T")[0];
 
-        // Hours worked (based on time difference)
-        const diffMs = new Date(timestamp) - new Date(log.log_time);
-        const diffHours = diffMs / (1000 * 60 * 60); // ms → hours
-        const newHoursWorked = log.hours_worked + (ignition ? diffHours : 0);
+      const checkSql = `
+        SELECT * FROM truck_logs
+        WHERE truck_id = ? AND DATE(log_time) = ?
+        ORDER BY log_time DESC
+        LIMIT 1
+      `;
 
-        // Distance travelled (Haversine formula)
-        const [prevLat, prevLon] = log.current_location.split(",").map(Number);
-        const R = 6371; // Earth radius in km
-        const dLat = (latitude - prevLat) * Math.PI / 180;
-        const dLon = (longitude - prevLon) * Math.PI / 180;
-        const a =
-          Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-          Math.cos(prevLat * Math.PI / 180) *
-          Math.cos(latitude * Math.PI / 180) *
-          Math.sin(dLon / 2) * Math.sin(dLon / 2);
-        const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-        const distance = R * c;
-        const newDistance = log.distance_travelled + (ignition ? distance : 0);
+      db.query(checkSql, [truck_id, today], (err3, results) => {
+        if (err3) return console.error("❌ DB error:", err3);
 
-        // Update log row
-        const updateSql = `
-          UPDATE truck_logs
-          SET hours_worked = ?, distance_travelled = ?, current_location = ?, log_time = ?
-          WHERE id = ?
-        `;
-        db.query(updateSql, [newHoursWorked, newDistance, `${latitude},${longitude}`, timestamp, log.id], (err2) => {
-          if (err2) console.error("Error updating truck_logs:", err2);
-        });
-      } else {
-        // Insert new row for today
-        const insertSql = `
-          INSERT INTO truck_logs
-          (truck_id, current_location, hours_worked, distance_travelled, log_time)
-          VALUES (?, ?, ?, ?, ?)
-        `;
-        db.query(insertSql, [truck_id, `${latitude},${longitude}`, 0, 0, timestamp], (err3) => {
-          if (err3) console.error("Error inserting truck_logs:", err3);
-        });
-      }
+        if (results.length) {
+          const log = results[0];
+
+          // Hours worked
+          const diffMs = new Date(timestamp) - new Date(log.log_time);
+          const diffHours = diffMs / (1000 * 60 * 60);
+          const newHoursWorked = log.hours_worked + (status.ignition ? diffHours : 0);
+
+          // Distance travelled (Haversine)
+          const [prevLat, prevLon] = log.current_location.split(",").map(Number);
+          const R = 6371;
+          const dLat = (location.latitude - prevLat) * Math.PI / 180;
+          const dLon = (location.longitude - prevLon) * Math.PI / 180;
+          const a =
+            Math.sin(dLat / 2) ** 2 +
+            Math.cos(prevLat * Math.PI / 180) *
+              Math.cos(location.latitude * Math.PI / 180) *
+              Math.sin(dLon / 2) ** 2;
+          const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+          const distance = R * c;
+          const newDistance = log.distance_travelled + (status.ignition ? distance : 0);
+
+          const updateSql = `
+            UPDATE truck_logs
+            SET hours_worked = ?, distance_travelled = ?, current_location = ?, log_time = ?
+            WHERE id = ?
+          `;
+          db.query(
+            updateSql,
+            [newHoursWorked, newDistance, `${location.latitude},${location.longitude}`, timestamp, log.id],
+            (err4) => {
+              if (err4) console.error("❌ Error updating truck_logs:", err4);
+            }
+          );
+        } else {
+          const insertSql = `
+            INSERT INTO truck_logs
+            (truck_id, current_location, hours_worked, distance_travelled, log_time)
+            VALUES (?, ?, ?, ?, ?)
+          `;
+          db.query(
+            insertSql,
+            [truck_id, `${location.latitude},${location.longitude}`, 0, 0, timestamp],
+            (err5) => {
+              if (err5) console.error("❌ Error inserting truck_logs:", err5);
+            }
+          );
+        }
+      });
     });
   } catch (error) {
-    console.error("Error processing MQTT message:", error);
+    console.error("❌ Error processing MQTT message:", error);
   }
 });
+
 
 
 
