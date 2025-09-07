@@ -1,36 +1,40 @@
-const mqtt = require("mqtt");
+// // mqtt_publisher.js
+// const mqtt = require("mqtt");
 
-// Connect to HiveMQ public broker
-const client = mqtt.connect("mqtt://broker.hivemq.com:1883");
+// // Connect to HiveMQ public broker
+// const client = mqtt.connect("mqtt://broker.hivemq.com:1883");
 
-// Topic to publish to
-const topic = "beacons/data";
+// client.on("connect", () => {
+//   console.log("✅ Connected to MQTT broker");
 
-// Get current date/time in ISO format
-const now = new Date().toISOString();
+//   // Example: publish every 5 seconds
+//   setInterval(() => {
+//     const timestamp = new Date().toISOString();
+//     const testData = {
+//       truck_id: 1,
+//       device_id: "DEV123",
+//       timestamp: timestamp,
+//       latitude: 15.586000 + Math.random() * 0.001,
+//       longitude: 79.826000 + Math.random() * 0.001,
+//       altitude: 10,
+//       speed_kmph: Math.floor(Math.random() * 80),
+//       heading_degrees: Math.floor(Math.random() * 360),
+//       ignition: 1,
+//       battery_level: 90,
+//       signal_strength: -70,
+//       gps_fix: 1,
+//       event_type: "normal",
+//       event_description: "Test GPS data",
+//       geofence_alert: 0
+//     };
 
-// Sample beacon data
-const message = {
-  deviceId: "beacon_001",
-  timestamp: now,
-  accelerometer: {
-    x: 0.12,
-    y: -0.98,
-    z: 9.81
-  },
-  gatewayId: "Gateway-A",
-  rssi: -72,
-  txPower: -4,
-  batteryLevel: 87,
-  status: "active"
-};
+//     client.publish("gps/data", JSON.stringify(testData), { qos: 0 }, (err) => {
+//       if (err) console.error("❌ Publish error:", err);
+//       else console.log("📤 Published test data:", testData);
+//     });
+//   }, 5000); // every 5 seconds
+// });
 
-// Connect & publish
-client.on("connect", () => {
-  console.log("✅ Connected to HiveMQ");
-  client.publish(topic, JSON.stringify(message), { qos: 1, retain: false }, (err) => {
-    if (err) console.error("❌ Publish error:", err);
-    else console.log("🚀 Published message to beacons/data:", message);
-    client.end(); // Disconnect after publishing
-  });
-});
+// client.on("error", (err) => {
+//   console.error("❌ MQTT connection error:", err);
+// });

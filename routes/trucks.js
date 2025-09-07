@@ -123,25 +123,17 @@ const mqtt = require("mqtt");
 
 // Ensure uploads folder exists
 const uploadDir = "uploads/";
-if (!fs.existsSync(uploadDir)) {
-  fs.mkdirSync(uploadDir);
-}
+if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir);
 
 // Multer storage config
 const storage = multer.diskStorage({
-  destination: (req, file, cb) => {
-    cb(null, uploadDir);
-  },
+  destination: (req, file, cb) => cb(null, uploadDir),
   filename: (req, file, cb) => {
     db.query("SELECT MAX(id) AS maxId FROM trucks", (err, result) => {
-      if (err) {
-        console.error("DB error while generating filename:", err);
-        return cb(err);
-      }
+      if (err) return cb(err);
       const nextId = (result[0].maxId || 0) + 1;
       const ext = path.extname(file.originalname);
-      const fileName = `truck${nextId}${ext}`;
-      cb(null, fileName);
+      cb(null, `truck${nextId}${ext}`);
     });
   },
 });
@@ -166,56 +158,37 @@ router.get("/:id", (req, res) => {
 
   const truckSql = "SELECT * FROM trucks WHERE id = ?";
 
-  let logsSql = `
+  const logsSql = `
     SELECT id, truck_id, current_location, hours_worked, fuel_consumption,
            state, weight, distance_travelled, log_time
     FROM truck_logs
-    WHERE truck_id = ?
+    WHERE truck_id = ? ${date ? "AND DATE(log_time) = ?" : "AND DATE(log_time) = CURDATE()"}
+    ORDER BY log_time;
   `;
-  const logParams = [truckId];
-  if (date) {
-    logsSql += " AND DATE(log_time) = ?";
-    logParams.push(date);
-  } else {
-    logsSql += " AND DATE(log_time) = CURDATE()";
-  }
-  logsSql += " ORDER BY log_time;";
 
-  let trackerSql = `
+  const trackerSql = `
     SELECT id, truck_id, device_id, timestamp, latitude, longitude, altitude,
            speed_kmph, heading_degrees, ignition, battery_level, signal_strength,
            gps_fix, event_type, event_description, geofence_alert
     FROM truck_tracker_data
-    WHERE truck_id = ?
+    WHERE truck_id = ? ${date ? "AND DATE(timestamp) = ?" : "AND DATE(timestamp) = CURDATE()"}
+    ORDER BY timestamp DESC;
   `;
-  const trackerParams = [truckId];
-  if (date) {
-    trackerSql += " AND DATE(timestamp) = ?";
-    trackerParams.push(date);
-  } else {
-    trackerSql += " AND DATE(timestamp) = CURDATE()";
-  }
-  trackerSql += " ORDER BY timestamp DESC;";
 
-  let latestLocationSql = `
+  const latestLocationSql = `
     SELECT current_location, log_time
     FROM truck_logs
-    WHERE truck_id = ?
+    WHERE truck_id = ? ${date ? "AND DATE(log_time) = ?" : "AND DATE(log_time) = CURDATE()"}
+    ORDER BY log_time DESC LIMIT 1;
   `;
-  const latestLocParams = [truckId];
-  if (date) {
-    latestLocationSql += " AND DATE(log_time) = ?";
-    latestLocParams.push(date);
-  } else {
-    latestLocationSql += " AND DATE(log_time) = CURDATE()";
-  }
-  latestLocationSql += " ORDER BY log_time DESC LIMIT 1;";
 
   db.query(truckSql, [truckId], (err, truckResults) => {
     if (err) return res.status(500).json({ error: "Database error" });
-    if (truckResults.length === 0) {
-      return res.status(404).json({ error: "Truck not found" });
-    }
+    if (!truckResults.length) return res.status(404).json({ error: "Truck not found" });
+
+    const logParams = date ? [truckId, date] : [truckId];
+    const trackerParams = date ? [truckId, date] : [truckId];
+    const latestLocParams = date ? [truckId, date] : [truckId];
 
     db.query(logsSql, logParams, (err2, logResults) => {
       if (err2) return res.status(500).json({ error: "Database error" });
@@ -223,14 +196,32 @@ router.get("/:id", (req, res) => {
       db.query(trackerSql, trackerParams, (err3, trackerResults) => {
         if (err3) return res.status(500).json({ error: "Database error" });
 
+        // Ensure tracker lat/lng are numbers and not null
+        const safeTracker = trackerResults.map(t => ({
+          ...t,
+          latitude: t.latitude !== null ? parseFloat(t.latitude) : 0,
+          longitude: t.longitude !== null ? parseFloat(t.longitude) : 0,
+        }));
+
         db.query(latestLocationSql, latestLocParams, (err4, locationResults) => {
           if (err4) return res.status(500).json({ error: "Database error" });
+
+          // Parse latest location safely
+          let safeLocation = null;
+          if (locationResults.length && locationResults[0].current_location) {
+            const [latStr, lonStr] = locationResults[0].current_location.split(",");
+            safeLocation = {
+              latitude: parseFloat(latStr) || 0,
+              longitude: parseFloat(lonStr) || 0,
+              ...locationResults[0],
+            };
+          }
 
           res.json({
             truck: truckResults[0],
             logs: logResults,
-            tracker: trackerResults,
-            location: locationResults.length ? locationResults[0] : null,
+            tracker: safeTracker,
+            location: safeLocation,
           });
         });
       });
@@ -243,16 +234,9 @@ router.post("/", upload.single("image"), (req, res) => {
   const { name, role, description } = req.body;
   const imageUrl = req.file ? `/uploads/${req.file.filename}` : null;
 
-  const sql = `
-    INSERT INTO trucks (name, role, description, image_url)
-    VALUES (?, ?, ?, ?)
-  `;
-
+  const sql = `INSERT INTO trucks (name, role, description, image_url) VALUES (?, ?, ?, ?)`;
   db.query(sql, [name, role, description, imageUrl], (err, result) => {
-    if (err) {
-      console.error("Error inserting truck:", err);
-      return res.status(500).json({ error: "Database error" });
-    }
+    if (err) return res.status(500).json({ error: "Database error" });
     res.json({ message: "Truck added successfully", truckId: result.insertId });
   });
 });
@@ -265,9 +249,7 @@ const client = mqtt.connect("mqtt://broker.hivemq.com:1883");
 
 client.on("connect", () => {
   console.log("✅ Connected to MQTT broker");
-  client.subscribe("gps/data", (err) => {
-    if (err) console.error("Subscription error:", err);
-  });
+  client.subscribe("gps/data", err => { if (err) console.error("Subscription error:", err); });
 });
 
 client.on("message", (topic, message) => {
@@ -276,24 +258,24 @@ client.on("message", (topic, message) => {
     console.log("📩 MQTT message received:", data);
 
     const {
-      truck_id,
-      device_id,
-      timestamp,
-      latitude,
-      longitude,
-      altitude = null,
-      speed_kmph = null,
-      heading_degrees = null,
-      ignition = null,
-      battery_level = null,
-      signal_strength = null,
-      gps_fix = null,
-      event_type = null,
-      event_description = null,
+      truck_id, device_id, timestamp,
+      latitude, longitude, altitude = null,
+      speed_kmph = null, heading_degrees = null,
+      ignition = null, battery_level = null, signal_strength = null,
+      gps_fix = null, event_type = null, event_description = null,
       geofence_alert = null,
     } = data;
 
-    // Insert into tracker table
+    // Skip if mandatory fields are missing
+    if (!truck_id || latitude === undefined || longitude === undefined || !timestamp) {
+      console.warn("❌ Skipping invalid MQTT message:", data);
+      return;
+    }
+
+    const safeLat = parseFloat(latitude) || 0;
+    const safeLon = parseFloat(longitude) || 0;
+
+    // Insert tracker data
     const trackerSql = `
       INSERT INTO truck_tracker_data
       (truck_id, device_id, timestamp, latitude, longitude, altitude,
@@ -301,33 +283,14 @@ client.on("message", (topic, message) => {
        gps_fix, event_type, event_description, geofence_alert)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `;
-    db.query(
-      trackerSql,
-      [
-        truck_id,
-        device_id,
-        timestamp,
-        latitude,
-        longitude,
-        altitude,
-        speed_kmph,
-        heading_degrees,
-        ignition,
-        battery_level,
-        signal_strength,
-        gps_fix,
-        event_type,
-        event_description,
-        geofence_alert,
-      ],
-      (err) => {
-        if (err) {
-          console.error("❌ Error inserting tracker data:", err);
-        } else {
-          console.log("✅ Tracker data inserted");
-        }
-      }
-    );
+    db.query(trackerSql, [
+      truck_id, device_id, timestamp, safeLat, safeLon, altitude,
+      speed_kmph, heading_degrees, ignition, battery_level, signal_strength,
+      gps_fix, event_type, event_description, geofence_alert
+    ], err => {
+      if (err) console.error("❌ Error inserting tracker data:", err);
+      else console.log("✅ Tracker data inserted");
+    });
 
     // Update daily logs
     const today = new Date(timestamp).toISOString().split("T")[0];
@@ -342,20 +305,18 @@ client.on("message", (topic, message) => {
 
       if (results.length) {
         const log = results[0];
-        const diffMs = new Date(timestamp) - new Date(log.log_time);
-        const diffHours = diffMs / (1000 * 60 * 60);
+        const diffHours = ((new Date(timestamp) - new Date(log.log_time)) / 3600000) || 0;
         const newHoursWorked = log.hours_worked + (ignition ? diffHours : 0);
 
-        const [prevLat, prevLon] = log.current_location.split(",").map(Number);
+        const [prevLat, prevLon] = log.current_location
+          ? log.current_location.split(",").map(Number)
+          : [0, 0];
+
         const R = 6371;
-        const dLat = (latitude - prevLat) * Math.PI / 180;
-        const dLon = (longitude - prevLon) * Math.PI / 180;
-        const a =
-          Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-          Math.cos(prevLat * Math.PI / 180) *
-          Math.cos(latitude * Math.PI / 180) *
-          Math.sin(dLon / 2) * Math.sin(dLon / 2);
-        const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+        const dLat = (safeLat - prevLat) * Math.PI / 180;
+        const dLon = (safeLon - prevLon) * Math.PI / 180;
+        const a = Math.sin(dLat/2)**2 + Math.cos(prevLat*Math.PI/180)*Math.cos(safeLat*Math.PI/180)*Math.sin(dLon/2)**2;
+        const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
         const distance = R * c;
         const newDistance = log.distance_travelled + (ignition ? distance : 0);
 
@@ -364,7 +325,7 @@ client.on("message", (topic, message) => {
           SET hours_worked = ?, distance_travelled = ?, current_location = ?, log_time = ?
           WHERE id = ?
         `;
-        db.query(updateSql, [newHoursWorked, newDistance, `${latitude},${longitude}`, timestamp, log.id], (err2) => {
+        db.query(updateSql, [newHoursWorked, newDistance, `${safeLat},${safeLon}`, timestamp, log.id], err2 => {
           if (err2) console.error("Error updating truck_logs:", err2);
           else console.log("✅ truck_logs updated");
         });
@@ -374,16 +335,18 @@ client.on("message", (topic, message) => {
           (truck_id, current_location, hours_worked, distance_travelled, log_time)
           VALUES (?, ?, ?, ?, ?)
         `;
-        db.query(insertSql, [truck_id, `${latitude},${longitude}`, 0, 0, timestamp], (err3) => {
+        db.query(insertSql, [truck_id, `${safeLat},${safeLon}`, 0, 0, timestamp], err3 => {
           if (err3) console.error("Error inserting truck_logs:", err3);
           else console.log("✅ New truck_logs row created");
         });
       }
     });
+
   } catch (error) {
     console.error("❌ Error processing MQTT message:", error);
   }
 });
+
 
 
 
