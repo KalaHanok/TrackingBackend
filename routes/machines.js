@@ -216,14 +216,23 @@ router.get("/", (req, res) => {
 
 // Add new machine
 router.post("/", upload.single("image"), (req, res) => {
-  const { name, role, description } = req.body;
+  const { name, role, description, deviceId } = req.body;
   if (!name) return res.status(400).json({ error: "Name is required" });
   const imageUrl = req.file ? `/uploads/${req.file.filename}` : null;
 
   const sql = "INSERT INTO machines (name, role, description, image) VALUES (?, ?, ?, ?)";
   db.query(sql, [name, role, description, imageUrl], (err, result) => {
     if (err) return res.status(500).json({ error: "Database error" });
-    res.status(201).json({ message: "Machine added", id: result.insertId });
+    const machineId = result.insertId;
+    if (deviceId) {
+      const mapSql = "INSERT INTO beacon_machine_map (beacon_id, machine_id) VALUES (?, ?)";
+      db.query(mapSql, [deviceId, machineId], (mapErr) => {
+        if (mapErr) return res.status(500).json({ error: "Mapping error" });
+        res.status(201).json({ message: "Machine added", id: machineId });
+      });
+    } else {
+      res.status(201).json({ message: "Machine added", id: machineId });
+    }
   });
 });
 
