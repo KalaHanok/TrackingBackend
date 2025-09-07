@@ -163,9 +163,42 @@ router.get("/:id", (req, res) => {
     db.query(logsSql, params, (err2, logResults) => {
       if (err2) return res.status(500).json({ error: "Database error" });
 
-      res.json({
-        worker: workerResults[0],
-        logs: logResults,
+      // Get deviceId from worker_device_mapping
+      const mappingSql = "SELECT deviceId FROM worker_device_mapping WHERE worker_id = ?";
+      db.query(mappingSql, [workerId], (err3, mappingResults) => {
+        if (err3) return res.status(500).json({ error: "Database error" });
+
+        if (mappingResults.length === 0) {
+          // No device mapping found
+          return res.json({
+            worker: workerResults[0],
+            logs: logResults,
+            device: null,
+            location: null,
+          });
+        }
+
+        const deviceId = mappingResults[0].deviceId;
+        // Get latest latitude and longitude for this deviceId
+        const locationSql = `
+          SELECT latitude, longitude
+          FROM machine_beacon_data
+          WHERE deviceId = ?
+          ORDER BY timestamp DESC
+          LIMIT 1
+        `;
+        db.query(locationSql, [deviceId], (err4, locResults) => {
+          if (err4) return res.status(500).json({ error: "Database error" });
+
+          const location = locResults.length > 0 ? locResults[0] : null;
+
+          res.json({
+            worker: workerResults[0],
+            logs: logResults,
+            device: deviceId,
+            location: location,
+          });
+        });
       });
     });
   });
