@@ -370,7 +370,7 @@ function handleBeaconData(data) {
           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `;
         db.query(insertSql, [
-          data.machine_id || null,
+          data.machine_id,
           data.deviceId || null,
           data.gatewayId || null,
           data.timestamp || new Date(),
@@ -405,7 +405,7 @@ function handleTruckData(data) {
     VALUES (?, ?, ?, ?, ?, ?)
   `;
   db.query(insertSql, [
-    data.truck_id || null,
+    data.truck_id,
     data.latitude ?? null,
     data.longitude ?? null,
     data.speed ?? null,
