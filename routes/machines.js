@@ -298,10 +298,10 @@ client.on("connect", () => {
 
 // Fixed gateway coordinates
 const gatewayCoords = {
-  gateway_A: { lat: 15.585108, lon: 79.825956 },
-  gateway_B: { lat: 15.585979, lon: 79.826868 },
-  gateway_C: { lat: 15.585958, lon: 79.825935 },
-  gateway_D: { lat: 15.586149, lon: 79.826879 },
+  "Gateway-A": { lat: 15.585108, lon: 79.825956 },
+  "Gateway-B": { lat: 15.585979, lon: 79.826868 },
+  "Gateway-C": { lat: 15.585958, lon: 79.825935 },
+  "Gateway-D": { lat: 15.586149, lon: 79.826879 },
 };
 
 // RSSI → distance
@@ -447,7 +447,7 @@ function runTriangulation(deviceId, callback) {
   db.query(query, [deviceId], (err, results) => {
     if (err) return console.error("❌ Triangulation DB error:", err);
 
-    if (results.length >= 3) {
+    if (results.length >= 1) {
       const readings = results.map((r) => {
         const g = gatewayCoords[r.gatewayId];
         return { lat: g.lat, lon: g.lon, rssi: r.rssi, txPower: r.txPower };
