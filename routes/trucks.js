@@ -265,7 +265,7 @@ const client = mqtt.connect("mqtt://broker.hivemq.com:1883");
 
 client.on("connect", () => {
   console.log("✅ Connected to MQTT broker");
-  client.subscribe("trucks/gps", (err) => {
+  client.subscribe("gps/data", (err) => {
     if (err) console.error("Subscription error:", err);
   });
 });
