@@ -201,10 +201,9 @@ const storage = multer.diskStorage({
     });
   },
 });
-
 const upload = multer({ storage });
 
-// ==================== EXPRESS ROUTES ==================== //
+// ----------------- EXPRESS ROUTES ----------------- //
 
 // Get all machines
 router.get("/", (req, res) => {
@@ -219,56 +218,58 @@ router.get("/", (req, res) => {
 router.post("/", upload.single("image"), (req, res) => {
   const { name, role, description } = req.body;
   if (!name) return res.status(400).json({ error: "Name is required" });
-
   const imageUrl = req.file ? `/uploads/${req.file.filename}` : null;
-  const sql =
-    "INSERT INTO machines (name, role, description, image) VALUES (?, ?, ?, ?)";
+
+  const sql = "INSERT INTO machines (name, role, description, image) VALUES (?, ?, ?, ?)";
   db.query(sql, [name, role, description, imageUrl], (err, result) => {
     if (err) return res.status(500).json({ error: "Database error" });
     res.status(201).json({ message: "Machine added", id: result.insertId });
   });
 });
 
-// Get machine by ID with logs + latest beacon (optional date filter)
+// Get machine by ID with logs + latest beacon
 router.get("/:id", (req, res) => {
   const machineId = req.params.id;
-  const { date } = req.query; // optional date YYYY-MM-DD
 
   const machineSql = "SELECT * FROM machines WHERE id = ?";
 
-  let logsSql = `
+  const logsSql = `
     SELECT id, machine_id, current_location, hours_worked, fuel_consumption,
            material_processed, state, latitude, longitude, log_date
     FROM machine_logs
-    WHERE machine_id = ?`;
-  if (date) logsSql += " AND DATE(log_date) = ?";
-  logsSql += " ORDER BY log_date";
+    WHERE machine_id = ?
+    ORDER BY log_date
+  `;
 
-  let beaconSql = `
+  const beaconSql = `
     SELECT id, machine_id, deviceId, timestamp, accel_x, accel_y, accel_z,
            rssi, txPower, batteryLevel, status, latitude, longitude
     FROM machine_beacon_data
-    WHERE machine_id = ?`;
-  if (date) beaconSql += " AND DATE(timestamp) = ?";
-  beaconSql += " ORDER BY timestamp DESC LIMIT 1";
+    WHERE machine_id = ?
+    ORDER BY timestamp DESC LIMIT 1
+  `;
 
   db.query(machineSql, [machineId], (err, machineResults) => {
     if (err) return res.status(500).json({ error: "Database error" });
-    if (!machineResults.length)
-      return res.status(404).json({ error: "Machine not found" });
+    if (!machineResults.length) return res.status(404).json({ error: "Machine not found" });
 
-    const logsParams = date ? [machineId, date] : [machineId];
-    db.query(logsSql, logsParams, (err2, logResults) => {
+    db.query(logsSql, [machineId], (err2, logResults) => {
       if (err2) return res.status(500).json({ error: "Database error" });
 
-      const beaconParams = date ? [machineId, date] : [machineId];
-      db.query(beaconSql, beaconParams, (err3, beaconResults) => {
+      db.query(beaconSql, [machineId], (err3, beaconResults) => {
         if (err3) return res.status(500).json({ error: "Database error" });
+
+        // Safe beacon data
+        const beacon = beaconResults.length ? beaconResults[0] : null;
+        if (beacon) {
+          beacon.latitude = beacon.latitude !== null ? parseFloat(beacon.latitude) : 0;
+          beacon.longitude = beacon.longitude !== null ? parseFloat(beacon.longitude) : 0;
+        }
 
         res.json({
           machine: machineResults[0],
           logs: logResults || [],
-          beacon: beaconResults.length ? beaconResults[0] : null,
+          beacon,
         });
       });
     });
@@ -277,9 +278,17 @@ router.get("/:id", (req, res) => {
 
 module.exports = router;
 
-// ==================== MQTT INTEGRATION ==================== //
+// ----------------- MQTT INTEGRATION ----------------- //
 
 const client = mqtt.connect("mqtt://broker.hivemq.com:1883");
+
+client.on("connect", () => {
+  console.log("✅ Connected to HiveMQ public broker");
+  client.subscribe(["beacons/data", "trucks/gps"], (err) => {
+    if (err) console.error("❌ Subscription error:", err);
+    else console.log("📡 Subscribed to beacons/data and trucks/gps");
+  });
+});
 
 // Fixed gateway coordinates
 const gatewayCoords = {
@@ -294,29 +303,20 @@ function rssiToDistance(rssi, txPower = -59, n = 2.5) {
   return Math.pow(10, (txPower - rssi) / (10 * n));
 }
 
-// Weighted centroid method (lat/lon)
-function estimatePosition(gatewayReadings, txPower = -59, n = 2.5) {
+// Weighted centroid method
+function estimatePosition(gatewayReadings) {
   let lat = 0,
     lon = 0,
     totalWeight = 0;
   for (const r of gatewayReadings) {
-    const dist = rssiToDistance(r.rssi, txPower, n);
+    const dist = rssiToDistance(r.rssi, r.txPower || -59);
     const weight = 1 / dist;
     lat += r.lat * weight;
     lon += r.lon * weight;
     totalWeight += weight;
   }
-  return { latitude: lat / totalWeight, longitude: lon / totalWeight };
+  return totalWeight > 0 ? { latitude: lat / totalWeight, longitude: lon / totalWeight } : { latitude: 0, longitude: 0 };
 }
-
-// MQTT connect & subscribe
-client.on("connect", () => {
-  console.log("✅ Connected to HiveMQ public broker");
-  client.subscribe(["beacons/data", "trucks/gps"], (err) => {
-    if (err) console.error("❌ Subscription error:", err);
-    else console.log("📡 Subscribed to beacons/data and trucks/gps");
-  });
-});
 
 // Handle incoming MQTT messages
 client.on("message", (topic, message) => {
@@ -324,11 +324,8 @@ client.on("message", (topic, message) => {
     const data = JSON.parse(message.toString());
     console.log(`📥 MQTT data [${topic}]:`, data);
 
-    if (topic === "beacons/data") {
-      handleBeaconData(data);
-    } else if (topic === "trucks/gps") {
-      handleTruckData(data);
-    }
+    if (topic === "beacons/data") handleBeaconData(data);
+    else if (topic === "trucks/gps") handleTruckData(data);
   } catch (err) {
     console.error("❌ MQTT JSON Parse Error:", err.message);
   }
@@ -336,15 +333,11 @@ client.on("message", (topic, message) => {
 
 // ----------------- BEACON HANDLER ----------------- //
 function handleBeaconData(data) {
-  const checkSql = `
-    SELECT id FROM machine_beacon_data
-    WHERE deviceId = ? AND DATE(timestamp) = CURDATE()
-    LIMIT 1
-  `;
+  const checkSql = `SELECT id FROM machine_beacon_data WHERE deviceId = ? LIMIT 1`;
   db.query(checkSql, [data.deviceId], (err, results) => {
     if (err) return console.error("❌ DB Check Error:", err);
 
-    const saveRow = (id = null, lat = data.latitude, lon = data.longitude) => {
+    const saveRow = (id = null, lat = data.latitude || 0, lon = data.longitude || 0) => {
       if (id) {
         const updateSql = `
           UPDATE machine_beacon_data
@@ -353,26 +346,20 @@ function handleBeaconData(data) {
               latitude=?, longitude=?, timestamp=?
           WHERE id=?
         `;
-        db.query(
-          updateSql,
-          [
-            data.gatewayId,
-            data.accelerometer?.x || 0,
-            data.accelerometer?.y || 0,
-            data.accelerometer?.z || 0,
-            data.rssi,
-            data.txPower,
-            data.batteryLevel,
-            data.status,
-            lat,
-            lon,
-            data.timestamp,
-            id,
-          ],
-          (err2) => {
-            if (err2) console.error("❌ DB Update Error:", err2);
-          }
-        );
+        db.query(updateSql, [
+          data.gatewayId,
+          data.accelerometer?.x || 0,
+          data.accelerometer?.y || 0,
+          data.accelerometer?.z || 0,
+          data.rssi,
+          data.txPower,
+          data.batteryLevel,
+          data.status,
+          lat,
+          lon,
+          data.timestamp,
+          id,
+        ]);
       } else {
         const insertSql = `
           INSERT INTO machine_beacon_data
@@ -380,31 +367,25 @@ function handleBeaconData(data) {
            rssi, txPower, batteryLevel, status, latitude, longitude)
           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `;
-        db.query(
-          insertSql,
-          [
-            data.machine_id,
-            data.deviceId,
-            data.gatewayId,
-            data.timestamp,
-            data.accelerometer?.x || 0,
-            data.accelerometer?.y || 0,
-            data.accelerometer?.z || 0,
-            data.rssi,
-            data.txPower,
-            data.batteryLevel,
-            data.status,
-            lat,
-            lon,
-          ],
-          (err3) => {
-            if (err3) console.error("❌ DB Insert Error:", err3);
-          }
-        );
+        db.query(insertSql, [
+          data.machine_id,
+          data.deviceId,
+          data.gatewayId,
+          data.timestamp,
+          data.accelerometer?.x || 0,
+          data.accelerometer?.y || 0,
+          data.accelerometer?.z || 0,
+          data.rssi,
+          data.txPower,
+          data.batteryLevel,
+          data.status,
+          lat,
+          lon,
+        ]);
       }
     };
 
-    // Run triangulation
+    // Run triangulation without today-only restriction
     runTriangulation(data.deviceId, (lat, lon) => {
       if (results.length > 0) saveRow(results[0].id, lat, lon);
       else saveRow(null, lat, lon);
@@ -419,13 +400,14 @@ function handleTruckData(data) {
     (truck_id, latitude, longitude, speed, fuel_level, timestamp)
     VALUES (?, ?, ?, ?, ?, ?)
   `;
-  db.query(
-    insertSql,
-    [data.truck_id, data.latitude, data.longitude, data.speed, data.fuel_level, data.timestamp],
-    (err) => {
-      if (err) console.error("❌ Truck DB Insert Error:", err);
-    }
-  );
+  db.query(insertSql, [
+    data.truck_id,
+    data.latitude || 0,
+    data.longitude || 0,
+    data.speed,
+    data.fuel_level,
+    data.timestamp,
+  ]);
 }
 
 // ----------------- TRIANGULATION ----------------- //
@@ -433,7 +415,7 @@ function runTriangulation(deviceId, callback) {
   const query = `
     SELECT gatewayId, rssi, txPower
     FROM machine_beacon_data
-    WHERE deviceId = ? AND DATE(timestamp) = CURDATE()
+    WHERE deviceId = ?
     ORDER BY timestamp DESC
     LIMIT 4
   `;
@@ -449,10 +431,11 @@ function runTriangulation(deviceId, callback) {
       callback(latitude, longitude);
     } else {
       console.log("⚠️ Not enough gateways for triangulation");
-      callback(null, null);
+      callback(0, 0);
     }
   });
 }
+
 
 
 
