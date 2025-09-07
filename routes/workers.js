@@ -107,7 +107,7 @@ if (!fs.existsSync(uploadDir)) {
   fs.mkdirSync(uploadDir);
 }
 
-// Custom storage engine for multer
+// Multer storage engine
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
     cb(null, uploadDir);
@@ -132,7 +132,7 @@ const storage = multer.diskStorage({
 
 const upload = multer({ storage });
 
-// ----------------- ROUTES ------------------
+// ----------------- ROUTES ------------------ //
 
 // Get all workers
 router.get("/", (req, res) => {
@@ -146,10 +146,11 @@ router.get("/", (req, res) => {
 // Get worker by ID with optional date filter
 router.get("/:id", (req, res) => {
   const workerId = req.params.id;
-  const date = req.query.date; // optional query param YYYY-MM-DD
+  const date = req.query.date;
 
   const workerSql = "SELECT * FROM workers WHERE id = ?";
-  const logsBaseSql = "SELECT work_date, hours_worked FROM work_logs WHERE worker_id = ?";
+  const logsBaseSql =
+    "SELECT work_date, hours_worked FROM work_logs WHERE worker_id = ?";
   const logsSql = date
     ? logsBaseSql + " AND work_date = ? ORDER BY work_date"
     : logsBaseSql + " ORDER BY work_date";
@@ -182,14 +183,15 @@ router.post("/", upload.single("image"), (req, res) => {
     age,
     blood_group,
     date_of_join,
+    location,
   } = req.body;
 
   const imageUrl = req.file ? `/uploads/${req.file.filename}` : null;
 
   const sql = `
     INSERT INTO workers 
-    (name, role, description, phone, gender, age, blood_group, date_of_join, image_url)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    (name, role, description, phone, gender, age, blood_group, date_of_join, image_url, location, attendance)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)
   `;
 
   db.query(
@@ -204,13 +206,17 @@ router.post("/", upload.single("image"), (req, res) => {
       blood_group,
       date_of_join,
       imageUrl,
+      location || null,
     ],
     (err, result) => {
       if (err) {
         console.error("Error inserting worker:", err);
         return res.status(500).json({ error: "Database error" });
       }
-      res.json({ message: "Worker added successfully", workerId: result.insertId });
+      res.json({
+        message: "Worker added successfully",
+        workerId: result.insertId,
+      });
     }
   );
 });
@@ -258,60 +264,78 @@ client.on("connect", () => {
   });
 });
 
-// Handle incoming MQTT messages for workers
+// Handle incoming MQTT messages
 client.on("message", (topic, message) => {
   try {
     const data = JSON.parse(message.toString());
     console.log("📥 Worker Beacon MQTT data:", data);
 
-    const workerId = data.worker_id;
+    // Resolve workerId
+    let workerId = data.worker_id;
 
-    // Run triangulation to get latest position
-    runTriangulation(data.deviceId, (lat, lon) => {
-      if (!lat || !lon) {
-        console.log("⚠️ Skipping location update (not enough gateways)");
-        return;
-      }
-
-      // Update worker table with latest lat/lon
-      const updateWorkerSql = `
-        UPDATE workers
-        SET latitude = ?, longitude = ?
-        WHERE id = ?
-      `;
-      db.query(updateWorkerSql, [lat, lon, workerId], (err) => {
-        if (err) return console.error("❌ Worker update error:", err);
-        console.log(`✅ Worker ${workerId} location updated`);
-      });
-
-      // Check if today's log exists
-      const checkLogSql = `
-        SELECT id FROM work_logs
-        WHERE worker_id = ? AND work_date = CURDATE()
-        LIMIT 1
-      `;
-      db.query(checkLogSql, [workerId], (err2, results) => {
-        if (err2) return console.error("❌ Work log check error:", err2);
-
-        if (results.length === 0) {
-          // Insert new log row for today
-          const insertLogSql = `
-            INSERT INTO work_logs (worker_id, work_date, hours_worked)
-            VALUES (?, CURDATE(), 0)
-          `;
-          db.query(insertLogSql, [workerId], (err3) => {
-            if (err3) console.error("❌ Insert work log error:", err3);
-            else console.log(`🆕 Work log created for worker ${workerId} today`);
-          });
-        } else {
-          console.log(`ℹ️ Work log already exists for worker ${workerId} today`);
+    if (!workerId && data.deviceId) {
+      // Lookup workerId from mapping table
+      const lookupSql = "SELECT worker_id FROM worker_devices WHERE deviceId = ?";
+      db.query(lookupSql, [data.deviceId], (err, result) => {
+        if (err) return console.error("❌ Worker lookup error:", err);
+        if (result.length === 0) {
+          console.log(`⚠️ No worker mapped for deviceId ${data.deviceId}`);
+          return;
         }
+        workerId = result[0].worker_id;
+        handleWorkerUpdate(workerId, data.deviceId);
       });
-    });
+    } else if (workerId) {
+      handleWorkerUpdate(workerId, data.deviceId);
+    }
   } catch (err) {
     console.error("❌ MQTT JSON Parse Error:", err.message);
   }
 });
+
+// Worker update + log check
+function handleWorkerUpdate(workerId, deviceId) {
+  runTriangulation(deviceId, (lat, lon) => {
+    if (!lat || !lon) {
+      console.log("⚠️ Skipping location update (not enough gateways)");
+      return;
+    }
+
+    // Update worker table
+    const updateWorkerSql = `
+      UPDATE workers
+      SET latitude = ?, longitude = ?
+      WHERE id = ?
+    `;
+    db.query(updateWorkerSql, [lat, lon, workerId], (err) => {
+      if (err) return console.error("❌ Worker update error:", err);
+      console.log(`✅ Worker ${workerId} location updated`);
+    });
+
+    // Check logs
+    const checkLogSql = `
+      SELECT id FROM work_logs
+      WHERE worker_id = ? AND work_date = CURDATE()
+      LIMIT 1
+    `;
+    db.query(checkLogSql, [workerId], (err2, results) => {
+      if (err2) return console.error("❌ Work log check error:", err2);
+
+      if (results.length === 0) {
+        const insertLogSql = `
+          INSERT INTO work_logs (worker_id, work_date, hours_worked)
+          VALUES (?, CURDATE(), 0)
+        `;
+        db.query(insertLogSql, [workerId], (err3) => {
+          if (err3) console.error("❌ Insert work log error:", err3);
+          else console.log(`🆕 Work log created for worker ${workerId} today`);
+        });
+      } else {
+        console.log(`ℹ️ Work log already exists for worker ${workerId} today`);
+      }
+    });
+  });
+}
 
 // ----------------- TRIANGULATION ----------------- //
 function runTriangulation(deviceId, callback) {
@@ -337,4 +361,5 @@ function runTriangulation(deviceId, callback) {
     }
   });
 }
+
 
