@@ -338,7 +338,7 @@ function handleBeaconData(data) {
 
     const saveRow = (id = null, lat = data.latitude ?? null, lon = data.longitude ?? null) => {
       // Get machine_id from beacon_machine_map using deviceId
-      const getMachineIdSql = `SELECT machine_id FROM beacon_machine_map WHERE _id = ? LIMIT 1`;
+      const getMachineIdSql = `SELECT machine_id FROM beacon_machine_map WHERE beacon_id = ? LIMIT 1`;
       db.query(getMachineIdSql, [data.deviceId], (errMap, mapResults) => {
         if (errMap) return console.error("❌ DB beacon_machine_map Error:", errMap);
 
