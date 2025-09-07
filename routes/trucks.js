@@ -171,7 +171,7 @@ router.get("/:id", (req, res) => {
            state, weight, distance_travelled, log_time
     FROM truck_logs
     WHERE truck_id = ?
-    ORDER BY log_time;
+    ORDER BY log_time limit 1;
   `;
 
   const trackerSql = `
@@ -180,7 +180,7 @@ router.get("/:id", (req, res) => {
            gps_fix, event_type, event_description, geofence_alert
     FROM truck_tracker_data
     WHERE truck_id = ?
-    ORDER BY timestamp DESC;
+    ORDER BY timestamp DESC limit 1;
   `;
 
   const latestLocationSql = `
