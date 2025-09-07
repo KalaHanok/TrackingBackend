@@ -172,7 +172,7 @@ router.get("/:id", (req, res) => {
            gps_fix, event_type, event_description, geofence_alert
     FROM truck_tracker_data
     WHERE truck_id = ? ${date ? "AND DATE(timestamp) = ?" : "AND DATE(timestamp) = CURDATE()"}
-    ORDER BY timestamp DESC;
+    ORDER BY timestamp DESC LIMIT 1;
   `;
 
   const latestLocationSql = `
@@ -186,31 +186,30 @@ router.get("/:id", (req, res) => {
     if (err) return res.status(500).json({ error: "Database error" });
     if (!truckResults.length) return res.status(404).json({ error: "Truck not found" });
 
-    const logParams = date ? [truckId, date] : [truckId];
-    const trackerParams = date ? [truckId, date] : [truckId];
-    const latestLocParams = date ? [truckId, date] : [truckId];
+    const params = date ? [truckId, date] : [truckId];
 
-    db.query(logsSql, logParams, (err2, logResults) => {
+    db.query(logsSql, params, (err2, logResults) => {
       if (err2) return res.status(500).json({ error: "Database error" });
 
-      db.query(trackerSql, trackerParams, (err3, trackerResults) => {
+      db.query(trackerSql, params, (err3, trackerResults) => {
         if (err3) return res.status(500).json({ error: "Database error" });
 
-        // Ensure tracker lat/lng are numbers and not null
-        const safeTracker = trackerResults.map(t => ({
-          ...t,
-          latitude: t.latitude !== null ? parseFloat(t.latitude) : 0,
-          longitude: t.longitude !== null ? parseFloat(t.longitude) : 0,
-        }));
+        // Return a single tracker object or null
+        const tracker = trackerResults.length
+          ? {
+              ...trackerResults[0],
+              latitude: trackerResults[0].latitude !== null ? parseFloat(trackerResults[0].latitude) : 0,
+              longitude: trackerResults[0].longitude !== null ? parseFloat(trackerResults[0].longitude) : 0,
+            }
+          : null;
 
-        db.query(latestLocationSql, latestLocParams, (err4, locationResults) => {
+        db.query(latestLocationSql, params, (err4, locationResults) => {
           if (err4) return res.status(500).json({ error: "Database error" });
 
-          // Parse latest location safely
-          let safeLocation = null;
+          let location = null;
           if (locationResults.length && locationResults[0].current_location) {
             const [latStr, lonStr] = locationResults[0].current_location.split(",");
-            safeLocation = {
+            location = {
               latitude: parseFloat(latStr) || 0,
               longitude: parseFloat(lonStr) || 0,
               ...locationResults[0],
@@ -220,8 +219,8 @@ router.get("/:id", (req, res) => {
           res.json({
             truck: truckResults[0],
             logs: logResults,
-            tracker: safeTracker,
-            location: safeLocation,
+            tracker,
+            location,
           });
         });
       });
