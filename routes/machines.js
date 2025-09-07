@@ -337,57 +337,66 @@ function handleBeaconData(data) {
     if (err) return console.error("❌ DB Check Error:", err);
 
     const saveRow = (id = null, lat = data.latitude ?? null, lon = data.longitude ?? null) => {
-      if (id) {
-        const updateSql = `
-          UPDATE machine_beacon_data
-          SET gatewayId=?, accel_x=?, accel_y=?, accel_z=?,
-              rssi=?, txPower=?, batteryLevel=?, status=?,
-              latitude=?, longitude=?, timestamp=?
-          WHERE id=?
-        `;
-        db.query(updateSql, [
-          data.gatewayId || null,
-          data.accelerometer?.x ?? null,
-          data.accelerometer?.y ?? null,
-          data.accelerometer?.z ?? null,
-          data.rssi ?? null,
-          data.txPower ?? null,
-          data.batteryLevel ?? null,
-          data.status || null,
-          lat,
-          lon,
-          data.timestamp || new Date(),
-          id,
-        ], (err2) => {
-          if (err2) console.error("❌ DB Update Error:", err2);
-          else console.log("✅ Beacon data updated:", data.deviceId);
-        });
-      } else {
-        const insertSql = `
-          INSERT INTO machine_beacon_data
-          (machine_id, deviceId, gatewayId, timestamp, accel_x, accel_y, accel_z,
-           rssi, txPower, batteryLevel, status, latitude, longitude)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        `;
-        db.query(insertSql, [
-          data.machine_id,
-          data.deviceId || null,
-          data.gatewayId || null,
-          data.timestamp || new Date(),
-          data.accelerometer?.x ?? null,
-          data.accelerometer?.y ?? null,
-          data.accelerometer?.z ?? null,
-          data.rssi ?? null,
-          data.txPower ?? null,
-          data.batteryLevel ?? null,
-          data.status || null,
-          lat,
-          lon,
-        ], (err2) => {
-          if (err2) console.error("❌ DB Insert Error:", err2);
-          else console.log("✅ Beacon data inserted:", data.deviceId);
-        });
-      }
+      // Get machine_id from beacon_machine_map using deviceId
+      const getMachineIdSql = `SELECT machine_id FROM beacon_machine_map WHERE device_id = ? LIMIT 1`;
+      db.query(getMachineIdSql, [data.deviceId], (errMap, mapResults) => {
+        if (errMap) return console.error("❌ DB beacon_machine_map Error:", errMap);
+
+        const machine_id = mapResults.length ? mapResults[0].machine_id : null;
+
+        if (id) {
+          const updateSql = `
+        UPDATE machine_beacon_data
+        SET gatewayId=?, accel_x=?, accel_y=?, accel_z=?,
+            rssi=?, txPower=?, batteryLevel=?, status=?,
+            latitude=?, longitude=?, timestamp=?, machine_id=?
+        WHERE id=?
+          `;
+          db.query(updateSql, [
+        data.gatewayId || null,
+        data.accelerometer?.x ?? null,
+        data.accelerometer?.y ?? null,
+        data.accelerometer?.z ?? null,
+        data.rssi ?? null,
+        data.txPower ?? null,
+        data.batteryLevel ?? null,
+        data.status || null,
+        lat,
+        lon,
+        data.timestamp || new Date(),
+        machine_id,
+        id,
+          ], (err2) => {
+        if (err2) console.error("❌ DB Update Error:", err2);
+        else console.log("✅ Beacon data updated:", data.deviceId);
+          });
+        } else {
+          const insertSql = `
+        INSERT INTO machine_beacon_data
+        (machine_id, deviceId, gatewayId, timestamp, accel_x, accel_y, accel_z,
+         rssi, txPower, batteryLevel, status, latitude, longitude)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          `;
+          db.query(insertSql, [
+        machine_id,
+        data.deviceId || null,
+        data.gatewayId || null,
+        data.timestamp || new Date(),
+        data.accelerometer?.x ?? null,
+        data.accelerometer?.y ?? null,
+        data.accelerometer?.z ?? null,
+        data.rssi ?? null,
+        data.txPower ?? null,
+        data.batteryLevel ?? null,
+        data.status || null,
+        lat,
+        lon,
+          ], (err2) => {
+        if (err2) console.error("❌ DB Insert Error:", err2);
+        else console.log("✅ Beacon data inserted:", data.deviceId);
+          });
+        }
+      });
     };
 
     runTriangulation(data.deviceId, (lat, lon) => {
