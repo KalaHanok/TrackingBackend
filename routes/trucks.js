@@ -236,7 +236,7 @@ router.get("/:id", (req, res) => {
 
 // Add a new truck
 router.post("/", upload.single("image"), (req, res) => {
-  const { name, role, description } = req.body;
+  const { name, role, description, deviceId } = req.body;
   const imageUrl = req.file ? `/uploads/${req.file.filename}` : null;
 
   const sql = `
@@ -249,7 +249,19 @@ router.post("/", upload.single("image"), (req, res) => {
       console.error("Error inserting truck:", err);
       return res.status(500).json({ error: "Database error" });
     }
-    res.json({ message: "Truck added successfully", truckId: result.insertId });
+    const truckId = result.insertId;
+    // Insert into truck_devices
+    const deviceSql = `
+      INSERT INTO truck_devices (truck_id, device_id)
+      VALUES (?, ?)
+    `;
+    db.query(deviceSql, [truckId, deviceId], (err2) => {
+      if (err2) {
+        console.error("Error inserting truck_devices:", err2);
+        return res.status(500).json({ error: "Database error (device)" });
+      }
+      res.json({ message: "Truck added successfully", truckId });
+    });
   });
 });
 
