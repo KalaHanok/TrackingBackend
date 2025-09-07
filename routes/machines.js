@@ -232,7 +232,6 @@ router.get("/:id", (req, res) => {
   const machineId = req.params.id;
 
   const machineSql = "SELECT * FROM machines WHERE id = ?";
-
   const logsSql = `
     SELECT id, machine_id, current_location, hours_worked, fuel_consumption,
            material_processed, state, latitude, longitude, log_date
@@ -240,7 +239,6 @@ router.get("/:id", (req, res) => {
     WHERE machine_id = ?
     ORDER BY log_date
   `;
-
   const beaconSql = `
     SELECT id, machine_id, deviceId, timestamp, accel_x, accel_y, accel_z,
            rssi, txPower, batteryLevel, status, latitude, longitude
@@ -259,7 +257,6 @@ router.get("/:id", (req, res) => {
       db.query(beaconSql, [machineId], (err3, beaconResults) => {
         if (err3) return res.status(500).json({ error: "Database error" });
 
-        // Safe beacon data
         const beacon = beaconResults.length ? beaconResults[0] : null;
         if (beacon) {
           beacon.latitude = beacon.latitude !== null ? parseFloat(beacon.latitude) : 0;
@@ -315,7 +312,9 @@ function estimatePosition(gatewayReadings) {
     lon += r.lon * weight;
     totalWeight += weight;
   }
-  return totalWeight > 0 ? { latitude: lat / totalWeight, longitude: lon / totalWeight } : { latitude: 0, longitude: 0 };
+  return totalWeight > 0
+    ? { latitude: lat / totalWeight, longitude: lon / totalWeight }
+    : { latitude: 0, longitude: 0 };
 }
 
 // Handle incoming MQTT messages
@@ -337,7 +336,7 @@ function handleBeaconData(data) {
   db.query(checkSql, [data.deviceId], (err, results) => {
     if (err) return console.error("❌ DB Check Error:", err);
 
-    const saveRow = (id = null, lat = data.latitude || 0, lon = data.longitude || 0) => {
+    const saveRow = (id = null, lat = data.latitude ?? null, lon = data.longitude ?? null) => {
       if (id) {
         const updateSql = `
           UPDATE machine_beacon_data
@@ -347,19 +346,22 @@ function handleBeaconData(data) {
           WHERE id=?
         `;
         db.query(updateSql, [
-          data.gatewayId,
-          data.accelerometer?.x || 0,
-          data.accelerometer?.y || 0,
-          data.accelerometer?.z || 0,
-          data.rssi,
-          data.txPower,
-          data.batteryLevel,
-          data.status,
+          data.gatewayId || null,
+          data.accelerometer?.x ?? null,
+          data.accelerometer?.y ?? null,
+          data.accelerometer?.z ?? null,
+          data.rssi ?? null,
+          data.txPower ?? null,
+          data.batteryLevel ?? null,
+          data.status || null,
           lat,
           lon,
-          data.timestamp,
+          data.timestamp || new Date(),
           id,
-        ]);
+        ], (err2) => {
+          if (err2) console.error("❌ DB Update Error:", err2);
+          else console.log("✅ Beacon data updated:", data.deviceId);
+        });
       } else {
         const insertSql = `
           INSERT INTO machine_beacon_data
@@ -368,24 +370,26 @@ function handleBeaconData(data) {
           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `;
         db.query(insertSql, [
-          data.machine_id,
-          data.deviceId,
-          data.gatewayId,
-          data.timestamp,
-          data.accelerometer?.x || 0,
-          data.accelerometer?.y || 0,
-          data.accelerometer?.z || 0,
-          data.rssi,
-          data.txPower,
-          data.batteryLevel,
-          data.status,
+          data.machine_id || null,
+          data.deviceId || null,
+          data.gatewayId || null,
+          data.timestamp || new Date(),
+          data.accelerometer?.x ?? null,
+          data.accelerometer?.y ?? null,
+          data.accelerometer?.z ?? null,
+          data.rssi ?? null,
+          data.txPower ?? null,
+          data.batteryLevel ?? null,
+          data.status || null,
           lat,
           lon,
-        ]);
+        ], (err2) => {
+          if (err2) console.error("❌ DB Insert Error:", err2);
+          else console.log("✅ Beacon data inserted:", data.deviceId);
+        });
       }
     };
 
-    // Run triangulation without today-only restriction
     runTriangulation(data.deviceId, (lat, lon) => {
       if (results.length > 0) saveRow(results[0].id, lat, lon);
       else saveRow(null, lat, lon);
@@ -401,13 +405,16 @@ function handleTruckData(data) {
     VALUES (?, ?, ?, ?, ?, ?)
   `;
   db.query(insertSql, [
-    data.truck_id,
-    data.latitude || 0,
-    data.longitude || 0,
-    data.speed,
-    data.fuel_level,
-    data.timestamp,
-  ]);
+    data.truck_id || null,
+    data.latitude ?? null,
+    data.longitude ?? null,
+    data.speed ?? null,
+    data.fuel_level ?? null,
+    data.timestamp || new Date(),
+  ], (err) => {
+    if (err) console.error("❌ Truck Insert Error:", err);
+    else console.log("✅ Truck data inserted:", data.truck_id);
+  });
 }
 
 // ----------------- TRIANGULATION ----------------- //
@@ -431,10 +438,11 @@ function runTriangulation(deviceId, callback) {
       callback(latitude, longitude);
     } else {
       console.log("⚠️ Not enough gateways for triangulation");
-      callback(0, 0);
+      callback(null, null);
     }
   });
 }
+
 
 
 
