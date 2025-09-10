@@ -148,7 +148,7 @@ router.get("/:id", (req, res) => {
   const workerId = req.params.id;
   const date = req.query.date; // optional query param YYYY-MM-DD
 
-  const workerSql = "SELECT * FROM workers WHERE id = ?";
+  const workerSql = "SELECT * FROM workers WHERE id = ? ORDER BY timestamp DESC LIMIT 1";
   const logsBaseSql = "SELECT work_date, hours_worked FROM work_logs WHERE worker_id = ?";
   const logsSql = date
     ? logsBaseSql + " AND work_date = ? ORDER BY work_date"
@@ -162,44 +162,11 @@ router.get("/:id", (req, res) => {
     const params = date ? [workerId, date] : [workerId];
     db.query(logsSql, params, (err2, logResults) => {
       if (err2) return res.status(500).json({ error: "Database error" });
-
-      // Get deviceId from worker_device_mapping
-      const mappingSql = "SELECT deviceId FROM worker_device_mapping WHERE worker_id = ?";
-      db.query(mappingSql, [workerId], (err3, mappingResults) => {
-        if (err3) return res.status(500).json({ error: "Database error" });
-
-        if (mappingResults.length === 0) {
-          // No device mapping found
-          return res.json({
+      res.json({
             worker: workerResults[0],
             logs: logResults,
-            device: null,
-            location: null,
           });
-        }
-
-        const deviceId = mappingResults[0].deviceId;
-        // Get latest latitude and longitude for this deviceId
-        const locationSql = `
-          SELECT latitude, longitude
-          FROM machine_beacon_data
-          WHERE deviceId = ?
-          ORDER BY timestamp DESC
-          LIMIT 1
-        `;
-        db.query(locationSql, [deviceId], (err4, locResults) => {
-          if (err4) return res.status(500).json({ error: "Database error" });
-
-          const location = locResults.length > 0 ? locResults[0] : null;
-
-          res.json({
-            worker: workerResults[0],
-            logs: logResults,
-            device: deviceId,
-            location: location,
-          });
-        });
-      });
+      // Get latest latitude and longitude for this workerId
     });
   });
 });
@@ -215,6 +182,7 @@ router.post("/", upload.single("image"), (req, res) => {
     age,
     blood_group,
     date_of_join,
+    device_id
   } = req.body;
 
   const imageUrl = req.file ? `/uploads/${req.file.filename}` : null;
@@ -243,7 +211,19 @@ router.post("/", upload.single("image"), (req, res) => {
         console.error("Error inserting worker:", err);
         return res.status(500).json({ error: "Database error" });
       }
-      res.json({ message: "Worker added successfully", workerId: result.insertId });
+      const workerId = result.insertId;
+      // Insert into worker_device_mapping
+      const mappingSql = `
+        INSERT INTO worker_device_mapping (worker_id, deviceId)
+        VALUES (?, ?)
+      `;
+      db.query(mappingSql, [workerId, device_id], (err2) => {
+        if (err2) {
+          console.error("Error inserting worker_device_mapping:", err2);
+          return res.status(500).json({ error: "Database error (mapping)" });
+        }
+        res.json({ message: "Worker added successfully", workerId });
+      });
     }
   );
 });
@@ -256,10 +236,10 @@ const client = mqtt.connect("mqtt://broker.hivemq.com:1883");
 
 // Fixed gateway coordinates
 const gatewayCoords = {
-  gateway_A: { lat: 15.585108, lon: 79.825956 },
-  gateway_B: { lat: 15.585979, lon: 79.826868 },
-  gateway_C: { lat: 15.585958, lon: 79.825935 },
-  gateway_D: { lat: 15.586149, lon: 79.826879 },
+  "Gateway-A": { lat: 15.585108, lon: 79.825956 },
+  "Gateway-B": { lat: 15.585979, lon: 79.826868 },
+  "Gateway-C": { lat: 15.585958, lon: 79.825935 },
+  "Gateway-D": { lat: 15.586149, lon: 79.826879 },
 };
 
 // RSSI → distance
@@ -297,48 +277,77 @@ client.on("message", (topic, message) => {
     const data = JSON.parse(message.toString());
     console.log("📥 Worker Beacon MQTT data:", data);
 
-    const workerId = data.worker_id;
+    const deviceId = data.deviceId;
+    const rssi = data.rssi;
+    const txPower = data.txPower;
 
-    // Run triangulation to get latest position
-    runTriangulation(data.deviceId, (lat, lon) => {
-      if (!lat || !lon) {
-        console.log("⚠️ Skipping location update (not enough gateways)");
+    let workerId = null;
+    const workerMappingSql = `
+      SELECT worker_id FROM worker_device_mapping WHERE deviceId = ?
+    `;
+    db.query(workerMappingSql, [deviceId], (err, results) => {
+      if (err) {
+        console.error("❌ Worker mapping query error:", err);
         return;
       }
 
-      // Update worker table with latest lat/lon
-      const updateWorkerSql = `
-        UPDATE workers
-        SET latitude = ?, longitude = ?
-        WHERE id = ?
-      `;
-      db.query(updateWorkerSql, [lat, lon, workerId], (err) => {
-        if (err) return console.error("❌ Worker update error:", err);
-        console.log(`✅ Worker ${workerId} location updated`);
-      });
+      if (results.length === 0) {
+        console.log(`⚠️ No worker mapping found for deviceId ${deviceId}`);
+        return;
+      }
 
-      // Check if today's log exists
-      const checkLogSql = `
-        SELECT id FROM work_logs
-        WHERE worker_id = ? AND work_date = CURDATE()
-        LIMIT 1
-      `;
-      db.query(checkLogSql, [workerId], (err2, results) => {
-        if (err2) return console.error("❌ Work log check error:", err2);
+      workerId = results[0].worker_id;
 
-        if (results.length === 0) {
-          // Insert new log row for today
-          const insertLogSql = `
-            INSERT INTO work_logs (worker_id, work_date, hours_worked)
-            VALUES (?, CURDATE(), 0)
-          `;
-          db.query(insertLogSql, [workerId], (err3) => {
-            if (err3) console.error("❌ Insert work log error:", err3);
-            else console.log(`🆕 Work log created for worker ${workerId} today`);
-          });
-        } else {
-          console.log(`ℹ️ Work log already exists for worker ${workerId} today`);
+      // Run triangulation using the current data
+      runTriangulation(rssi, txPower, (lat, lon) => {
+        if (!lat || !lon) {
+          console.log("⚠️ Skipping location update (invalid triangulation result)");
+          return;
         }
+
+        // Update worker table with the latest lat/lon
+        const updateWorkerSql = `
+          UPDATE workers
+          SET latitude = ?, longitude = ?
+          WHERE id = ?
+        `;
+        db.query(updateWorkerSql, [lat, lon, workerId], (err) => {
+          if (err) {
+            console.error("❌ Worker location update error:", err);
+          } else {
+            console.log(`✅ Worker ${workerId} location updated`);
+          }
+        });
+
+        // Check if today's log exists
+        const checkLogSql = `
+          SELECT id FROM work_logs
+          WHERE worker_id = ? AND work_date = CURDATE()
+          LIMIT 1
+        `;
+        db.query(checkLogSql, [workerId], (err2, logResults) => {
+          if (err2) {
+            console.error("❌ Work log check error:", err2);
+            return;
+          }
+
+          if (logResults.length === 0) {
+            // Insert new log row for today
+            const insertLogSql = `
+              INSERT INTO work_logs (worker_id, work_date, hours_worked)
+              VALUES (?, CURDATE(), 0)
+            `;
+            db.query(insertLogSql, [workerId], (err3) => {
+              if (err3) {
+                console.error("❌ Insert work log error:", err3);
+              } else {
+                console.log(`🆕 Work log created for worker ${workerId} today`);
+              }
+            });
+          } else {
+            console.log(`ℹ️ Work log already exists for worker ${workerId} today`);
+          }
+        });
       });
     });
   } catch (err) {
@@ -347,27 +356,19 @@ client.on("message", (topic, message) => {
 });
 
 // ----------------- TRIANGULATION ----------------- //
-function runTriangulation(deviceId, callback) {
-  const query = `
-    SELECT gatewayId, rssi, txPower
-    FROM machine_beacon_data
-    WHERE deviceId = ? AND DATE(timestamp) = CURDATE()
-    ORDER BY timestamp DESC
-    LIMIT 4
-  `;
-  db.query(query, [deviceId], (err, results) => {
-    if (err) return console.error("❌ Triangulation DB error:", err);
+function runTriangulation(rssi, txPower, callback) {
+  try {
+    // Use the fixed gateway coordinates for triangulation
+    const gatewayReadings = Object.keys(gatewayCoords).map((gatewayId) => {
+      const gateway = gatewayCoords[gatewayId];
+      return { lat: gateway.lat, lon: gateway.lon, rssi, txPower };
+    });
 
-    if (results.length >= 3) {
-      const readings = results.map((r) => {
-        const g = gatewayCoords[r.gatewayId];
-        return { lat: g.lat, lon: g.lon, rssi: r.rssi, txPower: r.txPower };
-      });
-      const { latitude, longitude } = estimatePosition(readings);
-      callback(latitude, longitude);
-    } else {
-      callback(null, null);
-    }
-  });
+    const { latitude, longitude } = estimatePosition(gatewayReadings);
+    callback(latitude, longitude);
+  } catch (err) {
+    console.error("❌ Triangulation error:", err);
+    callback(null, null);
+  }
 }
 

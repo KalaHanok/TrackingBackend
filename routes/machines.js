@@ -290,9 +290,9 @@ const client = mqtt.connect("mqtt://broker.hivemq.com:1883");
 
 client.on("connect", () => {
   console.log("✅ Connected to HiveMQ public broker");
-  client.subscribe(["beacons/data", "trucks/gps"], (err) => {
+  client.subscribe(["beacons/data"], (err) => {
     if (err) console.error("❌ Subscription error:", err);
-    else console.log("📡 Subscribed to beacons/data and trucks/gps");
+    else console.log("📡 Subscribed to beacons/data");
   });
 });
 
