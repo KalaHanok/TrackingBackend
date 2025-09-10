@@ -148,20 +148,20 @@ router.get("/:id", (req, res) => {
   const workerId = req.params.id;
   const date = req.query.date; // optional query param YYYY-MM-DD
 
-  const workerSql = "SELECT * FROM workers WHERE id = ? ORDER BY timestamp DESC LIMIT 1";
+  const workerSql = "SELECT * FROM workers WHERE id = ?";
   const logsBaseSql = "SELECT work_date, hours_worked FROM work_logs WHERE worker_id = ?";
   const logsSql = date
     ? logsBaseSql + " AND work_date = ? ORDER BY work_date"
     : logsBaseSql + " ORDER BY work_date";
 
   db.query(workerSql, [workerId], (err, workerResults) => {
-    if (err) return res.status(500).json({ error: "Database error" });
+    if (err) return res.status(500).json({ error: "Database error in worker query" });
     if (workerResults.length === 0)
       return res.status(404).json({ error: "Worker not found" });
 
     const params = date ? [workerId, date] : [workerId];
     db.query(logsSql, params, (err2, logResults) => {
-      if (err2) return res.status(500).json({ error: "Database error" });
+      if (err2) return res.status(500).json({ error: "Database error in logs query" });
       res.json({
             worker: workerResults[0],
             logs: logResults,
