@@ -185,9 +185,9 @@ function estimatePosition(gatewayReadings) {
 // MQTT connect & subscribe
 client.on("connect", () => {
   console.log("✅ Connected to HiveMQ public broker (workers)");
-  client.subscribe("workers/beacons/data", (err) => {
+  client.subscribe("beacons/data", (err) => {
     if (err) console.error("❌ Subscription error:", err);
-    else console.log("📡 Subscribed to workers/beacons/data");
+    else console.log("📡 Subscribed to beacons/data");
   });
 });
 
