@@ -12,7 +12,7 @@ client.on("connect", () => {
     // Simulated beacon data for beacon_001 from 3 gateways
     const testMessages = [
       {
-        deviceId: "beacon_001",
+        deviceId: "beacon_005",
         gatewayId: "Gateway-A",
         timestamp: new Date().toISOString(),
         rssi: -72,
@@ -22,7 +22,7 @@ client.on("connect", () => {
         status: "active"
       },
       {
-        deviceId: "beacon_001",
+        deviceId: "beacon_005",
         gatewayId: "Gateway-B",
         timestamp: new Date().toISOString(),
         rssi: -63,
@@ -32,7 +32,7 @@ client.on("connect", () => {
         status: "active"
       },
       {
-        deviceId: "beacon_001",
+        deviceId: "beacon_005",
         gatewayId: "Gateway-C",
         timestamp: new Date().toISOString(),
         rssi: -52,
