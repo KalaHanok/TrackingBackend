@@ -407,21 +407,21 @@ function handleBeaconData(data) {
 
 // ----------------- CALCULATE AND STORE LOCATION ----------------- //
 function calculateAndStoreLocation(deviceId, machineId) {
-  // For each gatewayId, get the latest (most recent) record for this deviceId
+  // Corrected SQL query to retrieve the latest data for each gatewayId
   const queryGateways = `
-      SELECT m.*
-      FROM machine_beacon_data m
-      JOIN (
-        SELECT gatewayId, MAX(timestamp) AS max_ts
-        FROM machine_beacon_data
-        WHERE deviceId = ?
-        GROUP BY gatewayId
-      ) t
-      ON m.gatewayId = t.gatewayId AND m.timestamp = t.max_ts
-      WHERE m.deviceId = ?
-      `;
+    SELECT m.* 
+    FROM machine_beacon_data m 
+    JOIN (
+      SELECT gatewayId, MAX(timestamp) AS max_ts 
+      FROM machine_beacon_data 
+      WHERE deviceId = ? 
+      GROUP BY gatewayId
+    ) t 
+    ON m.gatewayId = t.gatewayId AND m.timestamp = t.max_ts 
+    WHERE m.deviceId = ?
+  `;
 
-  db.query(queryGateways, [deviceId], (err, results) => {
+  db.query(queryGateways, [deviceId, deviceId], (err, results) => {
     if (err) {
       console.error("❌ DB Query Error (retrieve gateways):", err);
       return;
