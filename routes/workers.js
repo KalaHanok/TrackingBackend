@@ -219,14 +219,13 @@ client.on("message", (topic, message) => {
       // Insert the beacon data into worker_beacon_data
       const insertBeaconSql = `
         INSERT INTO worker_beacon_data
-        (worker_id, deviceId, gatewayId, timestamp, accel_x, accel_y, accel_z,
+        (deviceId, gatewayId, timestamp, accel_x, accel_y, accel_z,
          rssi, txPower, batteryLevel, status)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `;
       db.query(
         insertBeaconSql,
         [
-          workerId,
           data.deviceId || null,
           data.gatewayId || null,
           data.timestamp || new Date(),
