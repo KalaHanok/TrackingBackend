@@ -280,9 +280,9 @@ router.get("/:id", (req, res) => {
           const beacon = beaconResults.length ? beaconResults[0] : null;
           const location = locationResults.length
             ? {
-                latitude: parseFloat(locationResults[0].latitude),
-                longitude: parseFloat(locationResults[0].longitude),
-              }
+              latitude: parseFloat(locationResults[0].latitude),
+              longitude: parseFloat(locationResults[0].longitude),
+            }
             : { latitude: 0, longitude: 0 };
 
           res.json({
@@ -320,7 +320,7 @@ const gatewayCoords = {
 };
 
 // RSSI → distance
-function rssiToDistance(rssi, txPower = -59, n = 2.5) {
+function rssiToDistance(rssi, txPower, n = 2.5) {
   return Math.pow(10, (txPower - rssi) / (10 * n));
 }
 
@@ -407,14 +407,19 @@ function handleBeaconData(data) {
 
 // ----------------- CALCULATE AND STORE LOCATION ----------------- //
 function calculateAndStoreLocation(deviceId, machineId) {
+  // For each gatewayId, get the latest (most recent) record for this deviceId
   const queryGateways = `
-    SELECT gatewayId, rssi, txPower
-    FROM machine_beacon_data
-    WHERE deviceId = ?
-    GROUP BY gatewayId
-    ORDER BY timestamp DESC
-    LIMIT 3
-  `;
+      SELECT m.*
+      FROM machine_beacon_data m
+      JOIN (
+        SELECT gatewayId, MAX(timestamp) AS max_ts
+        FROM machine_beacon_data
+        WHERE deviceId = ?
+        GROUP BY gatewayId
+      ) t
+      ON m.gatewayId = t.gatewayId AND m.timestamp = t.max_ts
+      WHERE m.deviceId = ?
+      `;
 
   db.query(queryGateways, [deviceId], (err, results) => {
     if (err) {
@@ -451,26 +456,6 @@ function calculateAndStoreLocation(deviceId, machineId) {
   });
 }
 
-// ----------------- TRIANGULATION ----------------- //
-function estimatePosition(gatewayReadings) {
-  let lat = 0,
-    lon = 0,
-    totalWeight = 0;
-  for (const r of gatewayReadings) {
-    const dist = rssiToDistance(r.rssi, r.txPower || -59);
-    const weight = 1 / dist;
-    lat += r.lat * weight;
-    lon += r.lon * weight;
-    totalWeight += weight;
-  }
-  return totalWeight > 0
-    ? { latitude: lat / totalWeight, longitude: lon / totalWeight }
-    : { latitude: 0, longitude: 0 };
-}
-
-function rssiToDistance(rssi, txPower = -59, n = 2.5) {
-  return Math.pow(10, (txPower - rssi) / (10 * n));
-}
 
 
 
