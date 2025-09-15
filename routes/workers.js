@@ -65,7 +65,7 @@ router.get("/:id", (req, res) => {
     SELECT latitude, longitude 
     FROM worker_location 
     WHERE worker_id = ? 
-    ORDER BY id DESC 
+    ORDER BY created_at DESC 
     LIMIT 1
   `;
   const latestActivitySql = `
@@ -100,7 +100,7 @@ router.get("/:id", (req, res) => {
                 }
               : { latitude: 0, longitude: 0 };
 
-            const latestActivity = activityResults.length
+            const latestActivity = activityResults.length > 0
               ? {
                   status: activityResults[0].activity_status,
                   start_time: activityResults[0].start_time,
