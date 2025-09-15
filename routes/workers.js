@@ -44,16 +44,21 @@ router.get("/", (req, res) => {
   });
 });
 
-// Get worker by ID with logs and latest location
+// Get worker by ID with logs, days worked in this month, and hours worked today
 router.get("/:id", (req, res) => {
   const workerId = req.params.id;
 
   const workerSql = "SELECT * FROM workers WHERE id = ?";
   const logsSql = `
-    SELECT work_date, hours_worked 
-    FROM work_logs 
+    SELECT COUNT(DISTINCT work_date) AS days_worked
+    FROM work_logs
     WHERE worker_id = ? 
-    ORDER BY work_date
+      AND work_date BETWEEN DATE_FORMAT(CURDATE(), '%Y-%m-01') AND CURDATE()
+  `;
+  const hoursTodaySql = `
+    SELECT SUM(hours_worked) AS hours_worked_today
+    FROM work_logs
+    WHERE worker_id = ? AND work_date = CURDATE()
   `;
   const locationSql = `
     SELECT latitude, longitude 
@@ -68,23 +73,30 @@ router.get("/:id", (req, res) => {
     if (workerResults.length === 0)
       return res.status(404).json({ error: "Worker not found" });
 
-    db.query(logsSql, [workerId], (err2, logResults) => {
+    db.query(logsSql, [workerId], (err2, logsResults) => {
       if (err2) return res.status(500).json({ error: "Database error" });
 
-      db.query(locationSql, [workerId], (err3, locationResults) => {
+      db.query(hoursTodaySql, [workerId], (err3, hoursResults) => {
         if (err3) return res.status(500).json({ error: "Database error" });
 
-        const location = locationResults.length
-          ? {
-              latitude: parseFloat(locationResults[0].latitude),
-              longitude: parseFloat(locationResults[0].longitude),
-            }
-          : { latitude: 0, longitude: 0 };
+        db.query(locationSql, [workerId], (err4, locationResults) => {
+          if (err4) return res.status(500).json({ error: "Database error" });
 
-        res.json({
-          worker: workerResults[0],
-          logs: logResults,
-          location,
+          const location = locationResults.length
+            ? {
+                latitude: parseFloat(locationResults[0].latitude),
+                longitude: parseFloat(locationResults[0].longitude),
+              }
+            : { latitude: 0, longitude: 0 };
+
+          res.json({
+            worker: workerResults[0],
+            location,
+            logs: {
+              days_worked: logsResults[0]?.days_worked || 0,
+              hours_worked_today: hoursResults[0]?.hours_worked_today || 0
+            }
+          });
         });
       });
     });
