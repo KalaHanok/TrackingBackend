@@ -1,3 +1,15 @@
+function getISTDateTime() {
+  const now = new Date();
+  const ist = new Date(now.toLocaleString("en-US", { timeZone: "Asia/Kolkata" }));
+  const yyyy = ist.getFullYear();
+  const mm = String(ist.getMonth() + 1).padStart(2, "0");
+  const dd = String(ist.getDate()).padStart(2, "0");
+  const hh = String(ist.getHours()).padStart(2, "0");
+  const mi = String(ist.getMinutes()).padStart(2, "0");
+  const ss = String(ist.getSeconds()).padStart(2, "0");
+  return `${yyyy}-${mm}-${dd} ${hh}:${mi}:${ss}`;
+}
+
 // mqtt_publisher.js
 const mqtt = require("mqtt");
 
@@ -14,7 +26,7 @@ client.on("connect", () => {
       {
         deviceId: "beacon_005",
         gatewayId: "Gateway-A",
-        timestamp: new Date().toISOString(),
+        timestamp: getISTDateTime(),
         rssi: -72,
         txPower: -4,
         accelerometer: { x: 0.12, y: -0.88, z: 9.61 },
@@ -24,7 +36,7 @@ client.on("connect", () => {
       {
         deviceId: "beacon_005",
         gatewayId: "Gateway-B",
-        timestamp: new Date().toISOString(),
+        timestamp: getISTDateTime(),
         rssi: -63,
         txPower: -4,
         accelerometer: { x: 0.15, y: -0.82, z: 9.41 },
@@ -34,7 +46,7 @@ client.on("connect", () => {
       {
         deviceId: "beacon_005",
         gatewayId: "Gateway-C",
-        timestamp: new Date().toISOString(),
+        timestamp: getISTDateTime(),
         rssi: -52,
         txPower: -4,
         accelerometer: { x: 0.18, y: -0.79, z: 9.31 },

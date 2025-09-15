@@ -45,6 +45,7 @@ router.get("/", (req, res) => {
 });
 
 // Get worker by ID with logs, days worked in this month, and hours worked today
+// Get worker by ID with logs, days worked in this month, hours worked today, location, and latest activity
 router.get("/:id", (req, res) => {
   const workerId = req.params.id;
 
@@ -67,6 +68,13 @@ router.get("/:id", (req, res) => {
     ORDER BY id DESC 
     LIMIT 1
   `;
+  const latestActivitySql = `
+    SELECT activity_status, start_time, end_time
+    FROM worker_activity
+    WHERE worker_id = ?
+    ORDER BY end_time DESC
+    LIMIT 1
+  `;
 
   db.query(workerSql, [workerId], (err, workerResults) => {
     if (err) return res.status(500).json({ error: "Database error" });
@@ -82,26 +90,40 @@ router.get("/:id", (req, res) => {
         db.query(locationSql, [workerId], (err4, locationResults) => {
           if (err4) return res.status(500).json({ error: "Database error" });
 
-          const location = locationResults.length
-            ? {
-                latitude: parseFloat(locationResults[0].latitude),
-                longitude: parseFloat(locationResults[0].longitude),
-              }
-            : { latitude: 0, longitude: 0 };
+          db.query(latestActivitySql, [workerId], (err5, activityResults) => {
+            if (err5) return res.status(500).json({ error: "Database error" });
 
-          res.json({
-            worker: workerResults[0],
-            location,
-            logs: {
-              days_worked: logsResults[0]?.days_worked || 0,
-              hours_worked_today: hoursResults[0]?.hours_worked_today || 0
-            }
+            const location = locationResults.length
+              ? {
+                  latitude: parseFloat(locationResults[0].latitude),
+                  longitude: parseFloat(locationResults[0].longitude),
+                }
+              : { latitude: 0, longitude: 0 };
+
+            const latestActivity = activityResults.length
+              ? {
+                  status: activityResults[0].activity_status,
+                  start_time: activityResults[0].start_time,
+                  end_time: activityResults[0].end_time,
+                }
+                : { status: "Idle", start_time: null, end_time: null };
+
+            res.json({
+              worker: workerResults[0],
+              location,
+              logs: {
+                days_worked: logsResults[0]?.days_worked || 0,
+                hours_worked_today: hoursResults[0]?.hours_worked_today || 0,
+              },
+              latest_activity: latestActivity,
+            });
           });
         });
       });
     });
   });
 });
+
 
 // Add a new worker
 router.post("/", upload.single("image"), (req, res) => {
@@ -315,6 +337,128 @@ function calculateAndStoreWorkerLocation(deviceId, workerId) {
     });
   });
 }
+
+// ----------------- PROCESS 5-MINUTE INTERVALS ----------------- //
+function processWorkerActivity() {
+  console.log("🔄 Starting 5-minute worker activity processing...");
+  const fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000);
+  const now = new Date();
+
+  console.log(`⏱️ Querying data between ${fiveMinutesAgo} and ${now}`);
+
+  const query = `
+    SELECT wdm.worker_id, wbd.accel_x, wbd.accel_y, wbd.accel_z, wbd.timestamp
+    FROM worker_beacon_data wbd
+    JOIN worker_device_mapping wdm ON wbd.deviceId = wdm.deviceId
+    WHERE wbd.timestamp BETWEEN ? AND ?
+  `;
+
+  db.query(query, [fiveMinutesAgo, now], (err, results) => {
+    if (err) {
+      console.error("❌ Error querying worker_beacon_data with join:", err);
+      return;
+    }
+
+    console.log(`✅ Retrieved ${results.length} records from worker_beacon_data`);
+
+    const workerActivity = {};
+
+    results.forEach((row) => {
+      const magnitude = Math.sqrt(
+        Math.pow(row.accel_x, 2) + Math.pow(row.accel_y, 2) + Math.pow(row.accel_z, 2)
+      );
+      console.log(`🔍 Worker ID: ${row.worker_id}, Magnitude: ${magnitude}`);
+
+      const workerId = row.worker_id;
+
+      if (!workerActivity[workerId]) {
+        workerActivity[workerId] = { activeCount: 0, totalCount: 0 };
+      }
+
+      workerActivity[workerId].totalCount++;
+      if (magnitude > 0.5) {
+        // Threshold for active state
+        workerActivity[workerId].activeCount++;
+      }
+    });
+
+    Object.keys(workerActivity).forEach((workerId) => {
+      const { activeCount, totalCount } = workerActivity[workerId];
+      const activityStatus = activeCount / totalCount > 0.5 ? "active" : "idle";
+
+      console.log(
+        `📊 Worker ID: ${workerId}, Active Count: ${activeCount}, Total Count: ${totalCount}, Status: ${activityStatus}`
+      );
+
+      const insertActivitySql = `
+        INSERT INTO worker_activity (worker_id, activity_status, start_time, end_time)
+        VALUES (?, ?, ?, ?)
+      `;
+      db.query(insertActivitySql, [workerId, activityStatus, fiveMinutesAgo, now], (errInsert) => {
+        if (errInsert) {
+          console.error("❌ Error inserting into worker_activity:", errInsert);
+        } else {
+          console.log(`✅ Worker ${workerId} activity (${activityStatus}) recorded.`);
+        }
+      });
+    });
+  });
+}
+
+// ----------------- UPDATE WORK_LOGS EVERY 30 MINUTES ----------------- //
+function updateWorkLogs() {
+  console.log("🔄 Starting 30-minute work logs update...");
+  const today = new Date().toISOString().split("T")[0]; // Get today's date in YYYY-MM-DD format
+
+  console.log(`⏱️ Querying worker_activity for active hours on ${today}`);
+
+  const query = `
+    SELECT worker_id, SUM(TIMESTAMPDIFF(SECOND, start_time, end_time)) / 3600 AS active_hours
+    FROM worker_activity
+    WHERE DATE(start_time) = ?
+      AND activity_status = 'active'
+    GROUP BY worker_id
+  `;
+
+  db.query(query, [today], (err, results) => {
+    if (err) {
+      console.error("❌ Error querying worker_activity:", err);
+      return;
+    }
+
+    console.log(`✅ Retrieved ${results.length} workers with active hours`);
+
+    results.forEach((row) => {
+      const { worker_id, active_hours } = row;
+
+      console.log(`🔍 Worker ID: ${worker_id}, Active Hours: ${active_hours}`);
+
+      const updateLogSql = `
+        INSERT INTO work_logs (worker_id, work_date, hours_worked)
+        VALUES (?, ?, ?)
+        ON DUPLICATE KEY UPDATE hours_worked = ?
+      `;
+      db.query(updateLogSql, [worker_id, today, active_hours, active_hours], (errUpdate) => {
+        if (errUpdate) {
+          console.error("❌ Error updating work_logs:", errUpdate);
+        } else {
+          console.log(`✅ Work logs updated for worker ${worker_id}.`);
+        }
+      });
+    });
+  });
+}
+
+// ----------------- SCHEDULE TASKS ----------------- //
+setInterval(() => {
+  console.log("⏰ Triggering processWorkerActivity...");
+  processWorkerActivity();
+}, 5 * 60 * 1000); // Run every 5 minutes
+
+setInterval(() => {
+  console.log("⏰ Triggering updateWorkLogs...");
+  updateWorkLogs();
+}, 30 * 60 * 1000); // Run every 30 minutes
 
 module.exports = router;
 
