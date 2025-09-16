@@ -458,7 +458,7 @@ setInterval(() => {
 setInterval(() => {
   console.log("⏰ Triggering updateWorkLogs...");
   updateWorkLogs();
-}, 6 * 60 * 1000); // Run every 30 minutes
+}, 30 * 60 * 1000); // Run every 30 minutes
 
 module.exports = router;
 
