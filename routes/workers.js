@@ -435,10 +435,10 @@ function updateWorkLogs() {
 
       const updateLogSql = `
         INSERT INTO work_logs (worker_id, work_date, hours_worked)
-        VALUES (?, ?, ?)
-        ON DUPLICATE KEY UPDATE hours_worked = ?
+        VALUES (?, CURDATE(), ?)
+        ON DUPLICATE KEY UPDATE hours_worked = VALUES(hours_worked)
       `;
-      db.query(updateLogSql, [worker_id, today, active_hours, active_hours], (errUpdate) => {
+      db.query(updateLogSql, [worker_id, active_hours], (errUpdate) => {
         if (errUpdate) {
           console.error("❌ Error updating work_logs:", errUpdate);
         } else {
@@ -458,7 +458,7 @@ setInterval(() => {
 setInterval(() => {
   console.log("⏰ Triggering updateWorkLogs...");
   updateWorkLogs();
-}, 30 * 60 * 1000); // Run every 30 minutes
+}, 6 * 60 * 1000); // Run every 30 minutes
 
 module.exports = router;
 

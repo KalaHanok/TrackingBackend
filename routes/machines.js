@@ -84,6 +84,13 @@ router.get("/:id", (req, res) => {
     ORDER BY id DESC
     LIMIT 1
   `;
+  const latestActivitySql = `
+    SELECT activity_status, start_time, end_time
+    FROM machine_activity
+    WHERE machine_id = ?
+    ORDER BY end_time DESC
+    LIMIT 1
+  `;
 
   db.query(machineSql, [machineId], (err, machineResults) => {
     if (err) return res.status(500).json({ error: "Database error" });
@@ -98,19 +105,32 @@ router.get("/:id", (req, res) => {
         db.query(locationSql, [machineId], (err4, locationResults) => {
           if (err4) return res.status(500).json({ error: "Database error" });
 
-          const beacon = beaconResults.length ? beaconResults[0] : null;
-          const location = locationResults.length
-            ? {
-              latitude: parseFloat(locationResults[0].latitude),
-              longitude: parseFloat(locationResults[0].longitude),
-            }
-            : { latitude: 0, longitude: 0 };
+          db.query(latestActivitySql, [machineId], (err5, activityResults) => {
+            if (err5) return res.status(500).json({ error: "Database error" });
 
-          res.json({
-            machine: machineResults[0],
-            logs: logResults || [],
-            beacon,
-            location,
+            const beacon = beaconResults.length ? beaconResults[0] : null;
+            const location = locationResults.length
+              ? {
+                latitude: parseFloat(locationResults[0].latitude),
+                longitude: parseFloat(locationResults[0].longitude),
+              }
+              : { latitude: 0, longitude: 0 };
+
+            const latestActivity = activityResults.length > 0
+              ? {
+                  status: activityResults[0].activity_status,
+                  start_time: activityResults[0].start_time,
+                  end_time: activityResults[0].end_time,
+                }
+              : { status: "idle", start_time: null, end_time: null };
+
+            res.json({
+              machine: machineResults[0],
+              logs: logResults || [],
+              beacon,
+              location,
+              latest_activity: latestActivity,
+            });
           });
         });
       });
@@ -278,14 +298,127 @@ function calculateAndStoreLocation(deviceId, machineId) {
 }
 
 
+// ----------------- PROCESS 5-MINUTE INTERVALS ----------------- //
+function processMachineActivity() {
+  console.log("🔄 Starting 5-minute machine activity processing...");
+  const fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000);
+  const now = new Date();
 
+  console.log(`⏱️ Querying data between ${fiveMinutesAgo} and ${now}`);
 
+  const query = `
+    SELECT machine_id, accel_x, accel_y, accel_z, timestamp
+    FROM machine_beacon_data
+    WHERE timestamp BETWEEN ? AND ?
+  `;
 
+  db.query(query, [fiveMinutesAgo, now], (err, results) => {
+    if (err) {
+      console.error("❌ Error querying machine_beacon_data:", err);
+      return;
+    }
 
+    console.log(`✅ Retrieved ${results.length} records from machine_beacon_data`);
 
+    const machineActivity = {};
 
+    results.forEach((row) => {
+      const magnitude = Math.sqrt(
+        Math.pow(row.accel_x, 2) + Math.pow(row.accel_y, 2) + Math.pow(row.accel_z, 2)
+      );
+      console.log(`🔍 Machine ID: ${row.machine_id}, Magnitude: ${magnitude}`);
 
+      const machineId = row.machine_id;
 
+      if (!machineActivity[machineId]) {
+        machineActivity[machineId] = { activeCount: 0, totalCount: 0 };
+      }
 
+      machineActivity[machineId].totalCount++;
+      if (magnitude > 0.5) {
+        // Threshold for active state
+        machineActivity[machineId].activeCount++;
+      }
+    });
 
+    Object.keys(machineActivity).forEach((machineId) => {
+      const { activeCount, totalCount } = machineActivity[machineId];
+      const activityStatus = activeCount / totalCount > 0.5 ? "active" : "idle";
 
+      console.log(
+        `📊 Machine ID: ${machineId}, Active Count: ${activeCount}, Total Count: ${totalCount}, Status: ${activityStatus}`
+      );
+
+      const insertActivitySql = `
+        INSERT INTO machine_activity (machine_id, activity_status, start_time, end_time)
+        VALUES (?, ?, ?, ?)
+      `;
+      db.query(
+        insertActivitySql,
+        [machineId, activityStatus, fiveMinutesAgo, now],
+        (errInsert) => {
+          if (errInsert) {
+            console.error("❌ Error inserting into machine_activity:", errInsert);
+          } else {
+            console.log(`✅ Machine ${machineId} activity (${activityStatus}) recorded.`);
+          }
+        }
+      );
+    });
+  });
+}
+
+// ----------------- SCHEDULE TASKS ----------------- //
+setInterval(() => {
+  console.log("⏰ Triggering processMachineActivity...");
+  processMachineActivity();
+}, 5 * 60 * 1000); // Run every 5 minutes
+
+// ----------------- UPDATE MACHINE_LOGS EVERY 30 MINUTES ----------------- //
+function updateMachineLogs() {
+  console.log("🔄 Starting 30-minute machine logs update...");
+  const today = new Date().toISOString().split("T")[0];
+
+  console.log(`⏱️ Querying machine_activity for active hours on ${today}`);
+
+  const query = `
+    SELECT machine_id, SUM(TIMESTAMPDIFF(SECOND, start_time, end_time)) / 3600 AS active_hours
+    FROM machine_activity
+    WHERE DATE(start_time) = ?
+      AND activity_status = 'active'
+    GROUP BY machine_id
+  `;
+
+  db.query(query, [today], (err, results) => {
+    if (err) {
+      console.error("❌ Error querying machine_activity:", err);
+      return;
+    }
+
+    console.log(`✅ Retrieved ${results.length} machines with active hours`);
+
+    results.forEach((row) => {
+      const { machine_id, active_hours } = row;
+
+      console.log(`🔍 Machine ID: ${machine_id}, Active Hours: ${active_hours}`);
+
+      const updateLogSql = `
+        INSERT INTO machine_logs (machine_id, log_date, hours_worked)
+        VALUES (?, CURDATE(), ?)
+        ON DUPLICATE KEY UPDATE hours_worked = VALUES(hours_worked)
+      `;
+      db.query(updateLogSql, [machine_id, active_hours], (errUpdate) => {
+        if (errUpdate) {
+          console.error("❌ Error updating machine_logs:", errUpdate);
+        } else {
+          console.log(`✅ Machine logs updated for machine ${machine_id}.`);
+        }
+      });
+    });
+  });
+}
+
+setInterval(() => {
+  console.log("⏰ Triggering updateMachineLogs...");
+  updateMachineLogs();
+}, 30 * 60 * 1000); // Run every 30 minutes
