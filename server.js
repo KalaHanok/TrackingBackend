@@ -1,6 +1,7 @@
 const express = require("express");
 const cors = require("cors");
 const path = require("path");
+const mqtt = require("mqtt");
 
 require("dotenv").config();
 
@@ -25,6 +26,41 @@ app.use("/machines", machinesRoutes);
 
 
 app.use("/uploads", express.static(path.join(__dirname, "uploads")));
+
+const client = mqtt.connect("mqtt://broker.hivemq.com:1883"); // your broker
+const TOPIC = "beacons/data";
+
+let lastMessageTime = Date.now();
+const TIMEOUT = 30000; // 30 seconds
+let isDataAlive = true;
+
+client.on("connect", () => {
+  console.log("✅ Connected to MQTT broker");
+  client.subscribe(TOPIC, (err) => {
+    if (!err) console.log(`📡 Subscribed to ${TOPIC}`);
+  });
+});
+
+client.on("message", (topic, message) => {
+  console.log(`📥 Received: ${message.toString()}`);
+  lastMessageTime = Date.now();
+  isDataAlive = true; // got data, so mark alive
+});
+
+// Check every 30s if MQTT data is alive
+setInterval(() => {
+  if (Date.now() - lastMessageTime > TIMEOUT) {
+    isDataAlive = false;
+    console.log("🚨 ALERT: No data received from MQTT broker!");
+  } else {
+    isDataAlive = true;
+  }
+}, 30000);
+
+// API for frontend to check MQTT status
+app.get("/mqtt-status", (req, res) => {
+  res.json({ alive: isDataAlive });
+});
 
 
 // Start Server
