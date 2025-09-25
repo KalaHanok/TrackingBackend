@@ -46,20 +46,25 @@ router.get("/", (req, res) => {
 
 // Get worker by ID with logs, days worked in this month, and hours worked today
 // Get worker by ID with logs, days worked in this month, hours worked today, location, and latest activity
+// Get worker by ID with logs, days worked in this month, hours worked for given date (or today)
 router.get("/:id", (req, res) => {
   const workerId = req.params.id;
+  // Accept optional date param (YYYY-MM-DD). If not provided use server's current date.
+  const requestedDate = req.query.date || new Date().toISOString().split("T")[0];
 
   const workerSql = "SELECT * FROM workers WHERE id = ?";
+  // days_worked should be for the month of requestedDate
   const logsSql = `
     SELECT COUNT(DISTINCT work_date) AS days_worked
     FROM work_logs
-    WHERE worker_id = ? 
-      AND work_date BETWEEN DATE_FORMAT(CURDATE(), '%Y-%m-01') AND CURDATE()
+    WHERE worker_id = ?
+      AND work_date BETWEEN DATE_FORMAT(?, '%Y-%m-01') AND LAST_DAY(?)
   `;
-  const hoursTodaySql = `
-    SELECT SUM(hours_worked) AS hours_worked_today
+  // hours for the requestedDate (not CURDATE())
+  const hoursForDateSql = `
+    SELECT COALESCE(SUM(hours_worked), 0) AS hours_worked_for_date
     FROM work_logs
-    WHERE worker_id = ? AND work_date = CURDATE()
+    WHERE worker_id = ? AND work_date = ?
   `;
   const locationSql = `
     SELECT latitude, longitude 
@@ -81,10 +86,10 @@ router.get("/:id", (req, res) => {
     if (workerResults.length === 0)
       return res.status(404).json({ error: "Worker not found" });
 
-    db.query(logsSql, [workerId], (err2, logsResults) => {
+    db.query(logsSql, [workerId, requestedDate, requestedDate], (err2, logsResults) => {
       if (err2) return res.status(500).json({ error: "Database error" });
 
-      db.query(hoursTodaySql, [workerId], (err3, hoursResults) => {
+      db.query(hoursForDateSql, [workerId, requestedDate], (err3, hoursResults) => {
         if (err3) return res.status(500).json({ error: "Database error" });
 
         db.query(locationSql, [workerId], (err4, locationResults) => {
@@ -106,14 +111,15 @@ router.get("/:id", (req, res) => {
                   start_time: activityResults[0].start_time,
                   end_time: activityResults[0].end_time,
                 }
-                : { status: "Idle", start_time: null, end_time: null };
+              : { status: "Idle", start_time: null, end_time: null };
 
             res.json({
               worker: workerResults[0],
+              requested_date: requestedDate,
               location,
               logs: {
                 days_worked: logsResults[0]?.days_worked || 0,
-                hours_worked_today: hoursResults[0]?.hours_worked_today || 0,
+                hours_worked_for_date: hoursResults[0]?.hours_worked_for_date || 0,
               },
               latest_activity: latestActivity,
             });
@@ -123,6 +129,7 @@ router.get("/:id", (req, res) => {
     });
   });
 });
+
 
 
 // Add a new worker
