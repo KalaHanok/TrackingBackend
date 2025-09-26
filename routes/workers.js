@@ -195,10 +195,10 @@ const client = mqtt.connect("mqtt://broker.hivemq.com:1883");
 
 // Fixed gateway coordinates
 const gatewayCoords = {
-  "Gateway-A": { lat: 15.585108, lon: 79.825956 },
-  "Gateway-B": { lat: 15.585979, lon: 79.826868 },
-  "Gateway-C": { lat: 15.585958, lon: 79.825935 },
-  "Gateway-D": { lat: 15.586149, lon: 79.826879 },
+  "Gateway-A": { lat: 17.32047, lon: 78.56651 },
+  "Gateway-B": { lat: 17.32053, lon: 78.56656 },
+  "Gateway-C": { lat: 17.32046, lon: 78.56650 },
+  "Gateway-D": { lat: 17.32049, lon: 78.56656 },
 };
 
 // RSSI → distance
