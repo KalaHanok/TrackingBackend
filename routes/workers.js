@@ -194,17 +194,13 @@ router.post("/", upload.single("image"), (req, res) => {
 const client = mqtt.connect("mqtt://broker.hivemq.com:1883");
 
 const gatewayCoords = {
-  // "Gateway-A": { lat: 15.5869, lon: 79.8222694444 },
-  // "Gateway-B": { lat: 15.5863833333, lon: 79.825 },
-  // 'Gateway-F': {lat: 15.5862416667, lon: 79.8273194444 },
-  // 'Gateway-G': {lat: 15.5860916667, lon: 79.830075 },
-  // 'Gateway-E': {lat: 15.5846722222, lon: 79.8278944444 },
-  // "Gateway-D": { lat: 15.5841944444, lon: 79.825075 },
-  // "Gateway-C": { lat: 15.5853583333, lon: 79.8240361111 },
-  "Gateway-H": { lat: 17.46900, lon: 78.36416},
-  "Gateway-I": { lat: 17.46893, lon: 78.36400 },
-  "Gateway-J": { lat: 17.46880, lon: 78.36406 },
-  "Gateway-K": { lat: 17.46887, lon: 78.36421 },
+  "Gateway-A": { lat: 15.5869, lon: 79.8222694444 },
+  "Gateway-B": { lat: 15.5863833333, lon: 79.825 },
+  'Gateway-F': {lat: 15.5862416667, lon: 79.8273194444 },
+  'Gateway-G': {lat: 15.5860916667, lon: 79.830075 },
+  'Gateway-E': {lat: 15.5846722222, lon: 79.8278944444 },
+  "Gateway-D": { lat: 15.5841944444, lon: 79.825075 },
+  "Gateway-C": { lat: 15.5853583333, lon: 79.8240361111 },
 }
 
 // RSSI → distance
