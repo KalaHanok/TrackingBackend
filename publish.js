@@ -25,7 +25,7 @@
 //     const messages = [
 //       {
 //         deviceId: "beacon_005",
-//         gatewayId: "Gateway-A2",
+//         gatewayId: "Gateway-A",
 //         timestamp: getISTDateTime(),
 //         rssi: -70,
 //         txPower: -4,
@@ -35,7 +35,7 @@
 //       },
 //       {
 //         deviceId: "beacon_005",
-//         gatewayId: "Gateway-A3",
+//         gatewayId: "Gateway-B",
 //         timestamp: getISTDateTime(),
 //         rssi: -65,
 //         txPower: -4,
@@ -45,7 +45,7 @@
 //       },
 //       {
 //         deviceId: "beacon_005",
-//         gatewayId: "Gateway-A4",
+//         gatewayId: "Gateway-C",
 //         timestamp: getISTDateTime(),
 //         rssi: -60,
 //         txPower: -4,

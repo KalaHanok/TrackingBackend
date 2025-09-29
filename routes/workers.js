@@ -469,5 +469,63 @@ setInterval(() => {
   updateWorkLogs();
 }, 30 * 60 * 1000); // Run every 30 minutes
 
+// ----------------- API: Gateway distances from latest worker location ----------------- //
+router.get("/:id/gateway-distances", (req, res) => {
+  const workerId = req.params.id;
+
+  // Get worker's latest location
+  const locationSql = `
+    SELECT latitude, longitude 
+    FROM worker_location 
+    WHERE worker_id = ? 
+    ORDER BY created_at DESC 
+    LIMIT 1
+  `;
+
+  db.query(locationSql, [workerId], (err, results) => {
+    if (err) {
+      console.error("❌ Error fetching worker location:", err);
+      return res.status(500).json({ error: "Database error" });
+    }
+
+    if (results.length === 0) {
+      return res.status(404).json({ error: "No location found for worker" });
+    }
+
+    const { latitude, longitude } = results[0];
+
+    // Haversine formula to calculate distance in meters
+    function getDistance(lat1, lon1, lat2, lon2) {
+      const R = 6371000; // Earth radius in meters
+      const dLat = (lat2 - lat1) * (Math.PI / 180);
+      const dLon = (lon2 - lon1) * (Math.PI / 180);
+      const a =
+        Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+        Math.cos(lat1 * Math.PI / 180) *
+          Math.cos(lat2 * Math.PI / 180) *
+          Math.sin(dLon / 2) * Math.sin(dLon / 2);
+      const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+      return R * c;
+    }
+
+    // Loop through gateways and calculate distance
+    const distances = Object.entries(gatewayCoords).map(([gatewayId, coords]) => {
+      const distance = getDistance(
+        latitude,
+        longitude,
+        coords.lat,
+        coords.lon
+      );
+      return {
+        gateway: gatewayId,
+        distance: parseFloat(distance.toFixed(2)) // meters
+      };
+    });
+
+    res.json(distances);
+  });
+});
+
+
 module.exports = router;
 
