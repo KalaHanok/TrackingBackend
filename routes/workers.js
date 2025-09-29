@@ -212,7 +212,7 @@ const gatewayCoords = {
 }
 
 // RSSI → distance
-function rssiToDistance(rssi, txPower = -59, n = 2.5) {
+function rssiToDistance(rssi, txPower, n = 2.5) {
   return Math.pow(10, (txPower - rssi) / (10 * n));
 }
 
