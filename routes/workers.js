@@ -193,22 +193,14 @@ router.post("/", upload.single("image"), (req, res) => {
 
 const client = mqtt.connect("mqtt://broker.hivemq.com:1883");
 
-// Fixed gateway coordinates
-// const gatewayCoords = {
-//   "Gateway-A": { lat: 17.32054, lon: 78.56656 },
-//   "Gateway-B": { lat: 17.32054, lon: 78.56646 },
-//   "Gateway-C": { lat: 17.32040, lon: 78.56646 },
-//   "Gateway-D": { lat: 17.32040, lon: 78.56655 },
-// };
-
 const gatewayCoords = {
-  "Gateway-A": { lat: 15.5869, lon: 79.8222694444 },
-  "Gateway-B": { lat: 15.5863833333, lon: 79.825 },
-  'Gateway-C': {lat: 15.5862416667, lon: 79.8273194444, },
-  'Gateway-D': {lat: 15.5860916667, lon: 79.830075 },
-  'Gateway-E': {lat: 15.5846722222, lon: 79.8278944444 },
-  "Gateway-F": { lat: 15.5841944444, lon: 79.825075 },
-  "Gateway-G": { lat: 15.5853583333, lon: 79.8240361111 },
+  "Gateway-A1": { lat: 15.5869, lon: 79.8222694444 },
+  "Gateway-A2": { lat: 15.5863833333, lon: 79.825 },
+  'Gateway-A3': {lat: 15.5862416667, lon: 79.8273194444, },
+  'Gateway-A4': {lat: 15.5860916667, lon: 79.830075 },
+  'Gateway-A5': {lat: 15.5846722222, lon: 79.8278944444 },
+  "Gateway-A6": { lat: 15.5841944444, lon: 79.825075 },
+  "Gateway-A7": { lat: 15.5853583333, lon: 79.8240361111 },
 }
 
 // RSSI → distance
