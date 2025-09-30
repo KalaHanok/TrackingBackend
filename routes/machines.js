@@ -58,78 +58,183 @@ router.post("/", upload.single("image"), (req, res) => {
 });
 
 // Get machine by ID with logs + latest beacon + latest location
+// router.get("/:id", (req, res) => {
+//   const machineId = req.params.id;
+
+//   const machineSql = "SELECT * FROM machines WHERE id = ?";
+//   const logsSql = `
+//     SELECT id, machine_id, current_location, hours_worked, fuel_consumption,
+//            material_processed, state, log_date
+//     FROM machine_logs
+//     WHERE machine_id = ?
+//     ORDER BY log_date
+//   `;
+//   const beaconSql = `
+//     SELECT id, machine_id, deviceId, timestamp, accel_x, accel_y, accel_z,
+//            rssi, txPower, batteryLevel, status
+//     FROM machine_beacon_data
+//     WHERE machine_id = ?
+//     ORDER BY timestamp DESC
+//     LIMIT 1
+//   `;
+//   const locationSql = `
+//     SELECT latitude, longitude
+//     FROM machine_location
+//     WHERE machine_id = ?
+//     ORDER BY id DESC
+//     LIMIT 1
+//   `;
+//   const latestActivitySql = `
+//     SELECT activity_status, start_time, end_time
+//     FROM machine_activity
+//     WHERE machine_id = ?
+//     ORDER BY end_time DESC
+//     LIMIT 1
+//   `;
+
+//   db.query(machineSql, [machineId], (err, machineResults) => {
+//     if (err) return res.status(500).json({ error: "Database error" });
+//     if (!machineResults.length) return res.status(404).json({ error: "Machine not found" });
+
+//     db.query(logsSql, [machineId], (err2, logResults) => {
+//       if (err2) return res.status(500).json({ error: "Database error" });
+
+//       db.query(beaconSql, [machineId], (err3, beaconResults) => {
+//         if (err3) return res.status(500).json({ error: "Database error" });
+
+//         db.query(locationSql, [machineId], (err4, locationResults) => {
+//           if (err4) return res.status(500).json({ error: "Database error" });
+
+//           db.query(latestActivitySql, [machineId], (err5, activityResults) => {
+//             if (err5) return res.status(500).json({ error: "Database error" });
+
+//             const beacon = beaconResults.length ? beaconResults[0] : null;
+//             const location = locationResults.length
+//               ? {
+//                 latitude: parseFloat(locationResults[0].latitude),
+//                 longitude: parseFloat(locationResults[0].longitude),
+//               }
+//               : { latitude: 0, longitude: 0 };
+
+//             const latestActivity = activityResults.length > 0
+//               ? {
+//                   status: activityResults[0].activity_status,
+//                   start_time: activityResults[0].start_time,
+//                   end_time: activityResults[0].end_time,
+//                 }
+//               : { status: "idle", start_time: null, end_time: null };
+
+//             res.json({
+//               machine: machineResults[0],
+//               logs: logResults || [],
+//               beacon,
+//               location,
+//               latest_activity: latestActivity,
+//             });
+//           });
+//         });
+//       });
+//     });
+//   });
+// });
+// Get machine by ID for a specific date
 router.get("/:id", (req, res) => {
   const machineId = req.params.id;
+  const requestedDate = req.query.date || new Date().toISOString().split("T")[0];
 
   const machineSql = "SELECT * FROM machines WHERE id = ?";
+
+  // All logs for that date
   const logsSql = `
     SELECT id, machine_id, current_location, hours_worked, fuel_consumption,
            material_processed, state, log_date
     FROM machine_logs
-    WHERE machine_id = ?
-    ORDER BY log_date
+    WHERE machine_id = ? AND DATE(log_date) = ?
+    ORDER BY log_date DESC
   `;
-  const beaconSql = `
-    SELECT id, machine_id, deviceId, timestamp, accel_x, accel_y, accel_z,
-           rssi, txPower, batteryLevel, status
-    FROM machine_beacon_data
-    WHERE machine_id = ?
-    ORDER BY timestamp DESC
+
+  // Hours worked for requestedDate (already summed in machine_logs)
+  const hoursForDateSql = `
+    SELECT hours_worked
+    FROM machine_logs
+    WHERE machine_id = ? AND DATE(log_date) = ?
+    ORDER BY log_date DESC
     LIMIT 1
   `;
+
+  // Latest location for requestedDate
   const locationSql = `
     SELECT latitude, longitude
     FROM machine_location
-    WHERE machine_id = ?
-    ORDER BY id DESC
+    WHERE machine_id = ? AND DATE(created_at) = ?
+    ORDER BY created_at DESC
     LIMIT 1
   `;
+
+  // Latest beacon data for requestedDate
+  const beaconSql = `
+    SELECT *
+    FROM machine_beacon_data
+    WHERE machine_id = ? AND DATE(timestamp) = ?
+    ORDER BY timestamp DESC
+    LIMIT 1
+  `;
+
+  // Latest activity for requestedDate
   const latestActivitySql = `
     SELECT activity_status, start_time, end_time
     FROM machine_activity
-    WHERE machine_id = ?
+    WHERE machine_id = ? AND DATE(end_time) = ?
     ORDER BY end_time DESC
     LIMIT 1
   `;
 
   db.query(machineSql, [machineId], (err, machineResults) => {
     if (err) return res.status(500).json({ error: "Database error" });
-    if (!machineResults.length) return res.status(404).json({ error: "Machine not found" });
+    if (machineResults.length === 0)
+      return res.status(404).json({ error: "Machine not found" });
 
-    db.query(logsSql, [machineId], (err2, logResults) => {
+    db.query(logsSql, [machineId, requestedDate], (err2, logsResults) => {
       if (err2) return res.status(500).json({ error: "Database error" });
 
-      db.query(beaconSql, [machineId], (err3, beaconResults) => {
+      db.query(hoursForDateSql, [machineId, requestedDate], (err3, hoursResults) => {
         if (err3) return res.status(500).json({ error: "Database error" });
 
-        db.query(locationSql, [machineId], (err4, locationResults) => {
+        db.query(locationSql, [machineId, requestedDate], (err4, locationResults) => {
           if (err4) return res.status(500).json({ error: "Database error" });
 
-          db.query(latestActivitySql, [machineId], (err5, activityResults) => {
+          db.query(beaconSql, [machineId, requestedDate], (err5, beaconResults) => {
             if (err5) return res.status(500).json({ error: "Database error" });
 
-            const beacon = beaconResults.length ? beaconResults[0] : null;
-            const location = locationResults.length
-              ? {
-                latitude: parseFloat(locationResults[0].latitude),
-                longitude: parseFloat(locationResults[0].longitude),
-              }
-              : { latitude: 0, longitude: 0 };
+            db.query(latestActivitySql, [machineId, requestedDate], (err6, activityResults) => {
+              if (err6) return res.status(500).json({ error: "Database error" });
 
-            const latestActivity = activityResults.length > 0
-              ? {
-                  status: activityResults[0].activity_status,
-                  start_time: activityResults[0].start_time,
-                  end_time: activityResults[0].end_time,
-                }
-              : { status: "idle", start_time: null, end_time: null };
+              const location = locationResults.length
+                ? {
+                    latitude: parseFloat(locationResults[0].latitude),
+                    longitude: parseFloat(locationResults[0].longitude),
+                  }
+                : { latitude: 0, longitude: 0 };
 
-            res.json({
-              machine: machineResults[0],
-              logs: logResults || [],
-              beacon,
-              location,
-              latest_activity: latestActivity,
+              const lastBeacon = beaconResults.length ? beaconResults[0] : null;
+
+              const latestActivity = activityResults.length > 0
+                ? {
+                    status: activityResults[0].activity_status,
+                    start_time: activityResults[0].start_time,
+                    end_time: activityResults[0].end_time,
+                  }
+                : { status: "idle", start_time: null, end_time: null };
+
+              res.json({
+                machine: machineResults[0],
+                requested_date: requestedDate,
+                logs: logsResults || [],
+                hours_worked: hoursResults[0]?.hours_worked || 0,
+                location,
+                last_record: lastBeacon,
+                latest_activity: latestActivity,
+              });
             });
           });
         });
@@ -137,6 +242,7 @@ router.get("/:id", (req, res) => {
     });
   });
 });
+
 
 module.exports = router;
 
