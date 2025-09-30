@@ -24,7 +24,7 @@
 //     // Prepare test messages for beacon_005 (Gateways A, B, C)
 //     const messages = [
 //       {
-//         deviceId: "beacon_005",
+//         deviceId: "beacon_001",
 //         gatewayId: "Gateway-A5",
 //         timestamp: getISTDateTime(),
 //         rssi: -30,
@@ -34,7 +34,7 @@
 //         status: "active"
 //       },
 //       {
-//         deviceId: "beacon_005",
+//         deviceId: "beacon_001",
 //         gatewayId: "Gateway-A6",
 //         timestamp: getISTDateTime(),
 //         rssi: -50,
@@ -44,7 +44,7 @@
 //         status: "active"
 //       },
 //       {
-//         deviceId: "beacon_005",
+//         deviceId: "beacon_001",
 //         gatewayId: "Gateway-A7",
 //         timestamp: getISTDateTime(),
 //         rssi: -25,
