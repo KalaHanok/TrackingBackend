@@ -194,18 +194,14 @@ router.post("/", upload.single("image"), (req, res) => {
 const client = mqtt.connect("mqtt://broker.hivemq.com:1883");
 
 const gatewayCoords = {
-  // "Gateway-A1": { lat: 15.5869, lon: 79.8222694444 },
-  // "Gateway-A2": { lat: 15.5863833333, lon: 79.825 },
+  "Gateway-A1": { lat: 15.5869, lon: 79.8222694444 },
+  "Gateway-A2": { lat: 15.5863833333, lon: 79.825 },
   'Gateway-A6': {lat: 15.5862416667, lon: 79.8273194444 },
   'Gateway-A7': {lat: 15.5860916667, lon: 79.830075 },
   'Gateway-A5': {lat: 15.5846722222, lon: 79.8278944444 },
-  // "Gateway-A4": { lat: 15.5841944444, lon: 79.825075 },
-  // "Gateway-A3": { lat: 15.5853583333, lon: 79.8240361111 },
-  "Gateway-A1": { lat: 17.46892, lon: 78.36400 },
-  "Gateway-A2": { lat: 17.46900, lon: 78.36416 },
-  "Gateway-A3": { lat: 17.46880, lon: 78.36406 },
-  "Gateway-A4": { lat: 17.46887, lon: 78.36421 },
-}
+  "Gateway-A4": { lat: 15.5841944444, lon: 79.825075 },
+  "Gateway-A3": { lat: 15.5853583333, lon: 79.8240361111 },
+};
 
 // RSSI → distance
 function rssiToDistance(rssi, txPower, n = 2.5) {
