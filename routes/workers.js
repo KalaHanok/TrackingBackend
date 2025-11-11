@@ -203,8 +203,7 @@ const gatewayCoords = {
   // "Gateway-A3": { lat: 15.5853583333, lon: 79.8240361111 },
   "Gateway-A1": { lat: 17.413367, lon: 78.407300 },
   "Gateway-A2": { lat: 17.413478, lon: 78.407366 },
-  "Gateway-A3": { lat: 17.41337, lon: 78.40754 },
-  "Gateway-A4": { lat: 17.413263, lon: 78.407464 },
+  "Gateway-A3": { lat: 17.41339, lon: 78.40741 },
 };
 
 // RSSI → distance
