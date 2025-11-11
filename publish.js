@@ -1,4 +1,4 @@
-// publish.js
+// // publish.js
 // const mqtt = require("mqtt");
 
 // // Function to return IST timestamp
@@ -69,22 +69,22 @@
 //   }, 30000); // every 30 seconds
 // });
 
-// // subscribe.js
-// const mqtt = require("mqtt");
-// const client = mqtt.connect("mqtt://broker.hivemq.com:1883");
+// // // subscribe.js
+// // const mqtt = require("mqtt");
+// // const client = mqtt.connect("mqtt://broker.hivemq.com:1883");
 
-// client.on("connect", () => {
-//   console.log("Connected. Listening for beacons/data...\n");
-//   client.subscribe("beacons/data");
-// });
+// // client.on("connect", () => {
+// //   console.log("Connected. Listening for beacons/data...\n");
+// //   client.subscribe("beacons/data");
+// // });
 
-// client.on("message", (topic, message) => {
-//   try {
-//     const data = JSON.parse(message.toString());
-//     console.log(JSON.stringify(data, null, 2)); // pretty-print JSON
-//   } catch {
-//     console.log(message.toString()); // print raw message if not JSON
-//   }
-// });
+// // client.on("message", (topic, message) => {
+// //   try {
+// //     const data = JSON.parse(message.toString());
+// //     console.log(JSON.stringify(data, null, 2)); // pretty-print JSON
+// //   } catch {
+// //     console.log(message.toString()); // print raw message if not JSON
+// //   }
+// // });
 
 
