@@ -118,6 +118,68 @@ router.get("/:id", (req, res) => {
     });
   });
 });
+router.get("/:id/by-date", (req, res) => {
+  const truckId = req.params.id;
+  const selectedDate = req.query.date;
+
+  if (!selectedDate) {
+    return res.status(400).json({ error: "date query param is required" });
+  }
+
+  // Logs for specific date
+  const logsSql = `
+    SELECT *
+    FROM truck_logs
+    WHERE truck_id = ? AND DATE(log_time) = ?
+    ORDER BY log_time DESC;
+  `;
+
+  // Tracker latest location for that date
+  const trackerSql = `
+    SELECT *
+    FROM truck_tracker_data
+    WHERE truck_id = ? AND DATE(timestamp) = ?
+    ORDER BY timestamp DESC LIMIT 1;
+  `;
+
+  // Route path for that date
+  const routeSql = `
+    SELECT latitude, longitude, timestamp
+    FROM truck_tracker_data
+    WHERE truck_id = ? AND DATE(timestamp) = ?
+    ORDER BY timestamp ASC;
+  `;
+
+  // ------------------------
+  // Execute logs query
+  // ------------------------
+  db.query(logsSql, [truckId, selectedDate], (errLogs, logs) => {
+    if (errLogs) return res.status(500).json({ error: errLogs });
+
+    // ------------------------
+    // Execute tracker query
+    // ------------------------
+    db.query(trackerSql, [truckId, selectedDate], (errTracker, tracker) => {
+      if (errTracker) return res.status(500).json({ error: errTracker });
+
+      // ------------------------
+      // Execute route query
+      // ------------------------
+      db.query(routeSql, [truckId, selectedDate], (errRoute, routeData) => {
+        if (errRoute) return res.status(500).json({ error: errRoute });
+
+        // Final Response
+        res.json({
+          date: selectedDate,
+          logs: logs.length ? logs : [],
+          latestTracker: tracker.length ? tracker[0] : null,
+          routePath: routeData,
+        });
+      });
+    });
+  });
+});
+
 
 // ====================== ROUTE PATH API ====================== //
 router.get("/:id/route", (req, res) => {
