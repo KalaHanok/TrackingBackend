@@ -119,6 +119,36 @@ router.get("/:id", (req, res) => {
   });
 });
 
+// ====================== ROUTE PATH API ====================== //
+router.get("/:id/route", (req, res) => {
+  const truckId = req.params.id;
+  const date = req.query.date;
+
+  if (!date) {
+    return res.status(400).json({ error: "Date is required (YYYY-MM-DD)" });
+  }
+
+  const routeSql = `
+    SELECT latitude, longitude, timestamp
+    FROM truck_tracker_data
+    WHERE truck_id = ? AND DATE(timestamp) = ?
+    ORDER BY timestamp ASC
+  `;
+
+  db.query(routeSql, [truckId, date], (err, results) => {
+    if (err) return res.status(500).json({ error: "Database error" });
+
+    const route = results.map((row) => ({
+      lat: parseFloat(row.latitude),
+      lng: parseFloat(row.longitude),
+      time: row.timestamp
+    }));
+
+    res.json({ route });
+  });
+});
+
+
 // Add a new truck
 router.post("/", upload.single("image"), (req, res) => {
   const { name, role, description, deviceId } = req.body;
