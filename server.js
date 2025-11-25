@@ -24,6 +24,9 @@ app.use("/api/trucks", truckRoutes);
 const machinesRoutes = require("./routes/machines");
 app.use("/machines", machinesRoutes);
 
+const trackingRoutes = require("./routes/tracking");
+app.use("/api/tracking", trackingRoutes);
+
 
 app.use("/uploads", express.static(path.join(__dirname, "uploads")));
 
