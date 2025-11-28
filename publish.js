@@ -74,8 +74,8 @@
 // const client = mqtt.connect("mqtt://broker.hivemq.com:1883");
 
 // client.on("connect", () => {
-//   console.log("Connected. Listening for beacons/data...\n");
-//   client.subscribe("beacons/data");
+//   console.log("Connected. Listening for gps/data...\n");
+//   client.subscribe("gps/data");
 // });
 
 // client.on("message", (topic, message) => {
