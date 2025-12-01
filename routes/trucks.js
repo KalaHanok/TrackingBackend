@@ -56,7 +56,7 @@ router.get("/:id", (req, res) => {
            state, weight, distance_travelled, log_time
     FROM truck_logs
     WHERE truck_id = ?
-    ORDER BY log_time limit 1;
+    ORDER BY log_time DESC limit 1;
   `;
 
   const trackerSql = `
@@ -267,7 +267,6 @@ client.on("connect", () => {
 client.on("message", (topic, message) => {
   try {
     const data = JSON.parse(message.toString());
-
     const { device_id, timestamp, location, status, event } = data;
 
     // 🔹 Get truck_id from mapping table
@@ -279,6 +278,13 @@ client.on("message", (topic, message) => {
       }
 
       const truck_id = result[0].truck_id;
+
+      // 🔹 Convert ISO timestamp string to MySQL DATETIME
+      // Example: "2025-12-01T10:51:41Z" => "2025-12-01 10:51:41"
+      const mysqlTimestamp = new Date(timestamp)
+        .toISOString()
+        .slice(0, 19)
+        .replace("T", " ");
 
       // ================= Insert tracker data =================
       const trackerSql = `
@@ -294,7 +300,7 @@ client.on("message", (topic, message) => {
         [
           truck_id,
           device_id,
-          timestamp,
+          mysqlTimestamp,
           location.latitude,
           location.longitude,
           location.altitude,
@@ -314,7 +320,7 @@ client.on("message", (topic, message) => {
       );
 
       // ================= Insert/Update logs =================
-      const today = new Date(timestamp).toISOString().split("T")[0];
+      const today = mysqlTimestamp.split(" ")[0]; // YYYY-MM-DD
 
       const checkSql = `
         SELECT * FROM truck_logs
@@ -355,7 +361,7 @@ client.on("message", (topic, message) => {
           `;
           db.query(
             updateSql,
-            [newHoursWorked, newDistance, `${location.latitude},${location.longitude}`, timestamp, log.id],
+            [newHoursWorked, newDistance, `${location.latitude},${location.longitude}`, mysqlTimestamp, log.id],
             (err4) => {
               if (err4) console.error("❌ Error updating truck_logs:", err4);
             }
@@ -368,7 +374,7 @@ client.on("message", (topic, message) => {
           `;
           db.query(
             insertSql,
-            [truck_id, `${location.latitude},${location.longitude}`, 0, 0, timestamp],
+            [truck_id, `${location.latitude},${location.longitude}`, 0, 0, mysqlTimestamp],
             (err5) => {
               if (err5) console.error("❌ Error inserting truck_logs:", err5);
             }
@@ -380,6 +386,7 @@ client.on("message", (topic, message) => {
     console.error("❌ Error processing MQTT message:", error);
   }
 });
+
 
 
 
