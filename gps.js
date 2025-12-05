@@ -52,6 +52,6 @@
 // }
 
 // // Run every 30 seconds
-// setInterval(fetchVehicleData, 30000);
+// setInterval(fetchVehicleData, 32000);
 
 // console.log("GPS API Service Started...");

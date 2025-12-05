@@ -10,7 +10,7 @@
 //   console.log("Connected to HiveMQ MQTT broker");
 // });
 
-// // Fetch API data every 30 sec
+// // Fetch API data every 32 sec
 // async function fetchVehicleData() {
 //   try {
 //     const response = await axios.get(
@@ -19,31 +19,47 @@
 
 //     console.log("Received API Data");
 
+//     // Validate array format
 //     if (!response.data || !Array.isArray(response.data)) {
-//       console.error("❌ API format invalid");
+//       console.error("❌ API format invalid. Expected an array.");
 //       return;
 //     }
 
-//     publishToMQTT(response.data);
+//     // Remove duplicate objects (sometimes API repeats values)
+//     const uniqueVehicles = removeDuplicates(response.data);
+
+//     publishToMQTT(uniqueVehicles);
 
 //   } catch (error) {
 //     console.error("API Error:", error.response?.data || error.message);
 //   }
 // }
 
-// // PUBLISH FUNCTION
+// // Utility: Remove duplicates based on rowId or regNo
+// function removeDuplicates(arr) {
+//   const map = new Map();
+//   return arr.filter((item) => {
+//     if (!map.has(item.rowId)) {
+//       map.set(item.rowId, true);
+//       return true;
+//     }
+//     return false;
+//   });
+// }
+
+// // Publish data to MQTT
 // function publishToMQTT(vehicles) {
 //   const topic = "gps/data";
 
 //   vehicles.forEach((v) => {
-//     const vehicleNoFromAPI = v.regNo;  // Match using AP28TC9585
+//     const vehicleNoFromAPI = v.regNo;
 
 //     if (!vehicleNoFromAPI) {
 //       console.log("⚠️ regNo missing in API data");
 //       return;
 //     }
 
-//     // Match MySQL using vehicle_no (NOT device_id)
+//     // Find device_id from your DB using vehicle_no
 //     const query = "SELECT device_id FROM truck_devices WHERE vehicle_no = ?";
 
 //     db.query(query, [vehicleNoFromAPI], (err, result) => {
@@ -57,10 +73,10 @@
 //         return;
 //       }
 
-//       // Use internal system device_id (example: TTGO_GPS_TRACKER_1)
+//       // Internal device ID
 //       const deviceId = result[0].device_id;
 
-//       // Format timestamp
+//       // Timestamp formatting
 //       let timestamp = v.isoDate;
 //       if (timestamp) {
 //         timestamp = timestamp.replace("T", " ").split(".")[0];
@@ -70,14 +86,14 @@
 
 //       // MQTT Payload
 //       const mqttPayload = {
-//         device_id: deviceId,   // use your internal device ID (not API deviceId)
+//         device_id: deviceId,
 //         timestamp: timestamp,
 //         location: {
-//           latitude: v.latitude || 0,
-//           longitude: v.longitude || 0,
+//           latitude: v.latitude ?? 0,
+//           longitude: v.longitude ?? 0,
 //           altitude: 0,
-//           speed_kmph: v.speed || 0,
-//           heading_degrees: v.bearing || 0,
+//           speed_kmph: v.speed ?? 0,
+//           heading_degrees: v.bearing ?? 0,
 //         },
 //         status: {
 //           ignition: v.ignitionStatus === "ON",
@@ -92,23 +108,18 @@
 //         },
 //       };
 
-//       mqttClient.publish(
-//         topic,
-//         JSON.stringify(mqttPayload),
-//         { qos: 1 },
-//         (err) => {
-//           if (!err) {
-//             console.log(`Published to MQTT for ${vehicleNoFromAPI} -> ${deviceId}`);
-//           } else {
-//             console.error("MQTT Publish Error:", err);
-//           }
+//       // Publish to MQTT
+//       mqttClient.publish(topic, JSON.stringify(mqttPayload), { qos: 1 }, (err) => {
+//         if (!err) {
+//           console.log(`Published to MQTT for ${vehicleNoFromAPI} -> ${deviceId}`);
+//         } else {
+//           console.error("MQTT Publish Error:", err);
 //         }
-//       );
+//       });
 //     });
 //   });
 // }
 
-// // Run every 30 seconds
-// setInterval(fetchVehicleData, 30000);
+// setInterval(fetchVehicleData, 32000);
 
 // console.log("GPS API Service Started...");
