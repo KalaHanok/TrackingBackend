@@ -4,6 +4,8 @@ const path = require("path");
 const mqtt = require("mqtt");
 
 require("dotenv").config();
+require("./gpsapi");
+
 
 const app = express();
 
