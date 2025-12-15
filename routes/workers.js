@@ -52,7 +52,17 @@ router.get("/:id", (req, res) => {
   // Accept optional date param (YYYY-MM-DD). If not provided use server's current date.
   const requestedDate = req.query.date || new Date().toISOString().split("T")[0];
 
-  const workerSql = "SELECT * FROM workers WHERE id = ?";
+  //const workerSql = "SELECT * FROM workers WHERE id = ?";
+  const workerSql = `
+  SELECT 
+    w.*,
+    wdm.deviceId AS device_id
+  FROM workers w
+  LEFT JOIN worker_device_mapping wdm 
+    ON w.id = wdm.worker_id
+  WHERE w.id = ?
+`;
+
   // days_worked should be for the month of requestedDate
   const logsSql = `
     SELECT COUNT(DISTINCT work_date) AS days_worked
@@ -194,13 +204,18 @@ router.post("/", upload.single("image"), (req, res) => {
 const client = mqtt.connect("mqtt://broker.hivemq.com:1883");
 
 const gatewayCoords = {
-  "Gateway-A1": { lat: 15.5869, lon: 79.8222694444 },
-  "Gateway-A2": { lat: 15.5863833333, lon: 79.825 },
-  'Gateway-A6': {lat: 15.5862416667, lon: 79.8273194444 },
-  'Gateway-A7': {lat: 15.5860916667, lon: 79.830075 },
-  'Gateway-A5': {lat: 15.5846722222, lon: 79.8278944444 },
-  "Gateway-A4": { lat: 15.5841944444, lon: 79.825075 },
-  "Gateway-A3": { lat: 15.5853583333, lon: 79.8240361111 },
+  // "Gateway-A1": { lat: 15.5869, lon: 79.8222694444 },
+  // "Gateway-A2": { lat: 15.5863833333, lon: 79.825 },
+  // 'Gateway-A6': {lat: 15.5862416667, lon: 79.8273194444 },
+  // 'Gateway-A7': {lat: 15.5860916667, lon: 79.830075 },
+  // 'Gateway-A5': {lat: 15.5846722222, lon: 79.8278944444 },
+  // "Gateway-A4": { lat: 15.5841944444, lon: 79.825075 },
+  // "Gateway-A3": { lat: 15.5853583333, lon: 79.8240361111 },
+
+  "Gateway-A1": { lat: 15.58675, lon: 79.82731 },
+  "Gateway-A2": { lat: 15.58625, lon: 79.82715 },
+  'Gateway-A3': {lat: 15.58626, lon: 79.82732 },
+  'Gateway-A4': {lat: 15.58674, lon: 79.82786 },
 };
 
 // RSSI → distance
