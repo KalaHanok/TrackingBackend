@@ -244,7 +244,7 @@ router.get("/:id", (req, res) => {
 });
 
 
-module.exports = router;
+
 
 // ----------------- MQTT INTEGRATION ----------------- //
 
@@ -594,3 +594,4 @@ router.get("/:id/gateway-distances", (req, res) => {
   });
 });
 
+module.exports = router;
