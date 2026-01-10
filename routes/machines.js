@@ -362,54 +362,76 @@ function handleBeaconData(data) {
 
 // ----------------- CALCULATE AND STORE LOCATION ----------------- //
 function calculateAndStoreLocation(deviceId, machineId) {
-  // Corrected SQL query to retrieve the latest data for each gatewayId
   const queryGateways = `
-    SELECT m.* 
-    FROM machine_beacon_data m 
+    SELECT m.*
+    FROM machine_beacon_data m
     JOIN (
-      SELECT gatewayId, MAX(timestamp) AS max_ts 
-      FROM machine_beacon_data 
-      WHERE deviceId = ? 
+      SELECT gatewayId, MAX(timestamp) AS max_ts
+      FROM machine_beacon_data
+      WHERE deviceId = ? AND machine_id = ?
       GROUP BY gatewayId
-    ) t 
-    ON m.gatewayId = t.gatewayId AND m.timestamp = t.max_ts 
-    WHERE m.deviceId = ?
+    ) t
+      ON m.gatewayId = t.gatewayId
+     AND m.timestamp = t.max_ts
+    WHERE m.deviceId = ? AND m.machine_id = ?
   `;
 
-  db.query(queryGateways, [deviceId, deviceId], (err, results) => {
-    if (err) {
-      console.error("❌ DB Query Error (retrieve gateways):", err);
-      return;
-    }
-
-    if (results.length < 3) {
-      console.log("⚠️ Not enough gateways for triangulation (minimum 3 required)");
-      return;
-    }
-
-    // Prepare gateway readings for triangulation
-    const gatewayReadings = results.map((r) => {
-      const gateway = gatewayCoords[r.gatewayId];
-      return { lat: gateway.lat, lon: gateway.lon, rssi: r.rssi, txPower: r.txPower };
-    });
-
-    // Calculate latitude and longitude using triangulation
-    const { latitude, longitude } = estimatePosition(gatewayReadings);
-
-    // Insert the calculated location into machine_location
-    const insertLocationSql = `
-      INSERT INTO machine_location (machine_id, latitude, longitude)
-      VALUES (?, ?, ?)
-    `;
-    db.query(insertLocationSql, [machineId, latitude, longitude], (errInsert) => {
-      if (errInsert) {
-        console.error("❌ DB Insert Error (machine_location):", errInsert);
-      } else {
-        console.log(`✅ Location stored for machine ${machineId}: (${latitude}, ${longitude})`);
+  db.query(
+    queryGateways,
+    [deviceId, machineId, deviceId, machineId],
+    (err, results) => {
+      if (err) {
+        console.error("❌ DB Query Error (retrieve gateways):", err);
+        return;
       }
-    });
-  });
+
+      console.log(`📡 Gateways found for machine ${machineId}:`, results.length);
+
+      if (results.length < 3) {
+        console.warn("⚠️ Not enough gateways for triangulation");
+        return;
+      }
+
+      const gatewayReadings = results
+        .filter(r => gatewayCoords[r.gatewayId])
+        .map(r => ({
+          lat: gatewayCoords[r.gatewayId].lat,
+          lon: gatewayCoords[r.gatewayId].lon,
+          rssi: r.rssi,
+          txPower: r.txPower
+        }));
+
+      if (gatewayReadings.length < 3) {
+        console.warn("⚠️ Missing gateway coordinates");
+        return;
+      }
+
+      const { latitude, longitude } = estimatePosition(gatewayReadings);
+
+      const insertLocationSql = `
+        INSERT INTO machine_location (machine_id, latitude, longitude)
+        VALUES (?, ?, ?)
+      `;
+
+      db.query(
+        insertLocationSql,
+        [machineId, latitude, longitude],
+        errInsert => {
+          if (errInsert) {
+            console.error("❌ DB Insert Error (machine_location):", errInsert);
+          } else {
+            console.log(
+              `✅ Location stored for machine ${machineId}:`,
+              latitude,
+              longitude
+            );
+          }
+        }
+      );
+    }
+  );
 }
+
 
 
 // ----------------- PROCESS 5-MINUTE INTERVALS ----------------- //
