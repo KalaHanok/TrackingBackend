@@ -138,13 +138,30 @@ router.post("/", upload.single("image"), (req, res) => {
 //   });
 // });
 // Get machine by ID for a specific date
+function toISTMySQLDateTime(date) {
+  const istOffsetMs = 5.5 * 60 * 60 * 1000; // IST offset
+  const istDate = new Date(date.getTime() + istOffsetMs);
+  return istDate.toISOString().slice(0, 19).replace("T", " ");
+}
+
 router.get("/:id", (req, res) => {
   const machineId = req.params.id;
-  const requestedDate = req.query.date || new Date().toISOString().split("T")[0];
 
-  const machineSql = "SELECT * FROM machines WHERE id = ?";
+  let requestedDateTime;
 
-  // All logs for that date
+  if (req.query.datetime) {
+    requestedDateTime = new Date(req.query.datetime);
+  } else if (req.query.date) {
+    requestedDateTime = new Date(req.query.date + "T00:00:00");
+  } else {
+    requestedDateTime = new Date();
+  }
+
+  const requestedDate = requestedDateTime.toISOString().split("T")[0];
+  const mysqlDateTime = toISTMySQLDateTime(requestedDateTime);
+
+  const machineSql = `SELECT * FROM machines WHERE id = ?`;
+
   const logsSql = `
     SELECT id, machine_id, current_location, hours_worked, fuel_consumption,
            material_processed, state, log_date
@@ -153,45 +170,48 @@ router.get("/:id", (req, res) => {
     ORDER BY log_date DESC
   `;
 
-  // Hours worked for requestedDate (already summed in machine_logs)
   const hoursForDateSql = `
-    SELECT hours_worked
+    SELECT COALESCE(hours_worked, 0) AS hours_worked
     FROM machine_logs
     WHERE machine_id = ? AND DATE(log_date) = ?
     ORDER BY log_date DESC
     LIMIT 1
   `;
 
-  // Latest location for requestedDate
+  // 🔥 SAME LOGIC AS WORKERS (±1 minute)
   const locationSql = `
-    SELECT latitude, longitude
+    SELECT latitude, longitude, created_at
     FROM machine_location
-    WHERE machine_id = ? AND DATE(created_at) = ?
+    WHERE machine_id = ?
+      AND created_at BETWEEN
+          DATE_SUB(?, INTERVAL 1 MINUTE)
+          AND DATE_ADD(?, INTERVAL 1 MINUTE)
     ORDER BY created_at DESC
     LIMIT 1
   `;
 
-  // Latest beacon data for requestedDate
   const beaconSql = `
     SELECT *
     FROM machine_beacon_data
-    WHERE machine_id = ? AND DATE(timestamp) = ?
+    WHERE machine_id = ?
+      AND timestamp BETWEEN
+          DATE_SUB(?, INTERVAL 1 MINUTE)
+          AND DATE_ADD(?, INTERVAL 1 MINUTE)
     ORDER BY timestamp DESC
     LIMIT 1
   `;
 
-  // Latest activity for requestedDate
   const latestActivitySql = `
     SELECT activity_status, start_time, end_time
     FROM machine_activity
-    WHERE machine_id = ? AND DATE(end_time) = ?
+    WHERE machine_id = ?
     ORDER BY end_time DESC
     LIMIT 1
   `;
 
   db.query(machineSql, [machineId], (err, machineResults) => {
     if (err) return res.status(500).json({ error: "Database error" });
-    if (machineResults.length === 0)
+    if (!machineResults.length)
       return res.status(404).json({ error: "Machine not found" });
 
     db.query(logsSql, [machineId, requestedDate], (err2, logsResults) => {
@@ -200,48 +220,58 @@ router.get("/:id", (req, res) => {
       db.query(hoursForDateSql, [machineId, requestedDate], (err3, hoursResults) => {
         if (err3) return res.status(500).json({ error: "Database error" });
 
-        db.query(locationSql, [machineId, requestedDate], (err4, locationResults) => {
-          if (err4) return res.status(500).json({ error: "Database error" });
+        db.query(
+          locationSql,
+          [machineId, mysqlDateTime, mysqlDateTime],
+          (err4, locationResults) => {
+            if (err4) return res.status(500).json({ error: "Database error" });
 
-          db.query(beaconSql, [machineId, requestedDate], (err5, beaconResults) => {
-            if (err5) return res.status(500).json({ error: "Database error" });
+            db.query(
+              beaconSql,
+              [machineId, mysqlDateTime, mysqlDateTime],
+              (err5, beaconResults) => {
+                if (err5) return res.status(500).json({ error: "Database error" });
 
-            db.query(latestActivitySql, [machineId, requestedDate], (err6, activityResults) => {
-              if (err6) return res.status(500).json({ error: "Database error" });
+                db.query(latestActivitySql, [machineId], (err6, activityResults) => {
+                  if (err6) return res.status(500).json({ error: "Database error" });
 
-              const location = locationResults.length
-                ? {
-                    latitude: parseFloat(locationResults[0].latitude),
-                    longitude: parseFloat(locationResults[0].longitude),
-                  }
-                : { latitude: 0, longitude: 0 };
+                  const location = locationResults.length
+                    ? {
+                        latitude: parseFloat(locationResults[0].latitude),
+                        longitude: parseFloat(locationResults[0].longitude),
+                        timestamp: locationResults[0].created_at,
+                      }
+                    : { latitude: 0, longitude: 0, timestamp: null };
 
-              const lastBeacon = beaconResults.length ? beaconResults[0] : null;
+                  const lastBeacon = beaconResults.length ? beaconResults[0] : null;
 
-              const latestActivity = activityResults.length > 0
-                ? {
-                    status: activityResults[0].activity_status,
-                    start_time: activityResults[0].start_time,
-                    end_time: activityResults[0].end_time,
-                  }
-                : { status: "idle", start_time: null, end_time: null };
+                  const latestActivity = activityResults.length
+                    ? {
+                        status: activityResults[0].activity_status,
+                        start_time: activityResults[0].start_time,
+                        end_time: activityResults[0].end_time,
+                      }
+                    : { status: "idle", start_time: null, end_time: null };
 
-              res.json({
-                machine: machineResults[0],
-                requested_date: requestedDate,
-                logs: logsResults || [],
-                hours_worked: hoursResults[0]?.hours_worked || 0,
-                location,
-                last_record: lastBeacon,
-                latest_activity: latestActivity,
-              });
-            });
-          });
-        });
+                  res.json({
+                    machine: machineResults[0],
+                    requested_date: requestedDate,
+                    logs: logsResults || [],
+                    hours_worked: hoursResults[0]?.hours_worked || 0,
+                    location,
+                    last_record: lastBeacon,
+                    latest_activity: latestActivity,
+                  });
+                });
+              }
+            );
+          }
+        );
       });
     });
   });
 });
+
 
 
 
@@ -260,18 +290,18 @@ client.on("connect", () => {
 
 // Fixed gateway coordinates
 const gatewayCoords = {
-  // "Gateway-A1": { lat: 15.5869, lon: 79.8222694444 },
-  // "Gateway-A2": { lat: 15.5863833333, lon: 79.825 },
-  // 'Gateway-A6': {lat: 15.5862416667, lon: 79.8273194444 },
-  // 'Gateway-A7': {lat: 15.5860916667, lon: 79.830075 },
-  // 'Gateway-A5': {lat: 15.5846722222, lon: 79.8278944444 },
-  // "Gateway-A4": { lat: 15.5841944444, lon: 79.825075 },
-  // "Gateway-A3": { lat: 15.5853583333, lon: 79.8240361111 },
+  "GW_B_ZONE_B": { lat: 15.5869, lon: 79.8222694444 },
+    "GW_C_ZONE_C": { lat: 15.5863833333, lon: 79.825 },
+    'GW_A_ENTRANCE': { lat: 15.5862416667, lon: 79.8273194444 },
+    'GW_D_ZONE_D': { lat: 15.5860916667, lon: 79.830075 },
+    'GW_E_ZONE_E': { lat: 15.5846722222, lon: 79.8278944444 },
+    "GW_F_ZONE_F": { lat: 15.5841944444, lon: 79.825075 },
+    "GW_G_ZONE_G": { lat: 15.5853583333, lon: 79.8240361111 },
 
-  "GW_G_ZONE_G": { lat: 15.58675, lon: 79.82731 },
-  "GW_B_ZONE_B": { lat: 15.58625, lon: 79.82715 },
-  'GW_E_ZONE_E': {lat: 15.58626, lon: 79.82732 },
-  'GW_A_ENTRANCE': {lat: 15.58674, lon: 79.82786 },
+//   "GW_G_ZONE_G": { lat: 15.58675, lon: 79.82731 },
+//   "GW_B_ZONE_B": { lat: 15.58625, lon: 79.82715 },
+//   'GW_E_ZONE_E': {lat: 15.58626, lon: 79.82732 },
+//   'GW_A_ENTRANCE': {lat: 15.58674, lon: 79.82786 },
 };
 
 // RSSI → distance
