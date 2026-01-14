@@ -91,10 +91,11 @@ router.get("/:id", (req, res) => {
   SELECT latitude, longitude, created_at
   FROM worker_location
   WHERE worker_id = ?
-    AND DATE(created_at) = ?
+    AND created_at <= ?
   ORDER BY created_at DESC
   LIMIT 1
 `;
+
 
 
     const latestActivitySql = `
@@ -116,7 +117,7 @@ router.get("/:id", (req, res) => {
             db.query(hoursForDateSql, [workerId, requestedDate], (err3, hoursResults) => {
                 if (err3) return res.status(500).json({ error: "Database error" });
 
-                db.query(locationSql, [workerId, requestedDate], (err4, locationResults) => {
+                db.query(locationSql, [workerId, requestedDateTime], (err4, locationResults) => {
                     if (err4) return res.status(500).json({ error: "Database error" });
 
                     db.query(latestActivitySql, [workerId], (err5, activityResults) => {
