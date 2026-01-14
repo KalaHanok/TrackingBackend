@@ -50,15 +50,22 @@ router.get("/", (req, res) => {
 router.get("/:id", (req, res) => {
     const workerId = req.params.id;
     // Accept optional date param (YYYY-MM-DD). If not provided use server's current date.
+    
     let requestedDateTime;
 
     if (req.query.datetime) {
         requestedDateTime = new Date(req.query.datetime);
+
     } else if (req.query.date) {
         requestedDateTime = new Date(req.query.date + "T00:00:00");
     } else {
         requestedDateTime = new Date();
     }
+
+    const mysqlDateTime = requestedDateTime
+  .toISOString()
+  .slice(0, 19)
+  .replace("T", " ");
 
     const requestedDate = requestedDateTime.toISOString().split("T")[0];
 
@@ -91,7 +98,9 @@ router.get("/:id", (req, res) => {
   SELECT latitude, longitude, created_at
   FROM worker_location
   WHERE worker_id = ?
-    AND created_at <= ?
+    AND created_at BETWEEN
+        DATE_SUB(?, INTERVAL 1 MINUTE)
+        AND DATE_ADD(?, INTERVAL 1 MINUTE)
   ORDER BY created_at DESC
   LIMIT 1
 `;
@@ -117,7 +126,7 @@ router.get("/:id", (req, res) => {
             db.query(hoursForDateSql, [workerId, requestedDate], (err3, hoursResults) => {
                 if (err3) return res.status(500).json({ error: "Database error" });
 
-                db.query(locationSql, [workerId, requestedDateTime], (err4, locationResults) => {
+                db.query(locationSql, [workerId, mysqlDateTime, mysqlDateTime], (err4, locationResults) => {
                     if (err4) return res.status(500).json({ error: "Database error" });
 
                     db.query(latestActivitySql, [workerId], (err5, activityResults) => {
