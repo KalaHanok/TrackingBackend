@@ -29,6 +29,18 @@ app.use("/machines", machinesRoutes);
 const trackingRoutes = require("./routes/tracking");
 app.use("/api/tracking", trackingRoutes);
 
+const v1AuthRoutes = require("./routes/v1/auth");
+const v1WorkerRoutes = require("./routes/v1/workers");
+const v1TruckRoutes = require("./routes/v1/trucks");
+const v1MachinesRoutes = require("./routes/v1/machines");
+const v1TrackingRoutes = require("./routes/v1/tracking");
+
+app.use("/api/v1/auth", v1AuthRoutes);
+app.use("/api/v1/workers", v1WorkerRoutes);
+app.use("/api/v1/trucks", v1TruckRoutes);
+app.use("/api/v1/machines", v1MachinesRoutes);
+app.use("/api/v1/tracking", v1TrackingRoutes);
+
 
 app.use("/uploads", express.static(path.join(__dirname, "uploads")));
 
