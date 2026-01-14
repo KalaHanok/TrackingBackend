@@ -62,10 +62,16 @@ router.get("/:id", (req, res) => {
         requestedDateTime = new Date();
     }
 
-    const mysqlDateTime = requestedDateTime
-  .toISOString()
-  .slice(0, 19)
-  .replace("T", " ");
+    // Convert UTC datetime → IST datetime string
+function toISTMySQLDateTime(date) {
+  const istOffsetMs = 5.5 * 60 * 60 * 1000; // IST offset
+  const istDate = new Date(date.getTime() + istOffsetMs);
+
+  return istDate.toISOString().slice(0, 19).replace("T", " ");
+}
+
+const mysqlDateTime = toISTMySQLDateTime(requestedDateTime);
+
 
     const requestedDate = requestedDateTime.toISOString().split("T")[0];
 
