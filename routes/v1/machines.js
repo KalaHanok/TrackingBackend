@@ -191,15 +191,14 @@ router.get("/:id", (req, res) => {
   `;
 
   const beaconSql = `
-    SELECT *
-    FROM machine_beacon_data
-    WHERE machine_id = ?
-      AND timestamp BETWEEN
-          DATE_SUB(?, INTERVAL 1 MINUTE)
-          AND DATE_ADD(?, INTERVAL 1 MINUTE)
-    ORDER BY timestamp DESC
-    LIMIT 1
-  `;
+  SELECT *
+  FROM machine_beacon_data
+  WHERE machine_id = ?
+    AND timestamp <= ?
+  ORDER BY timestamp DESC
+  LIMIT 1
+`;
+
 
   const latestActivitySql = `
     SELECT activity_status, start_time, end_time
@@ -228,7 +227,7 @@ router.get("/:id", (req, res) => {
 
             db.query(
               beaconSql,
-              [machineId, mysqlDateTime, mysqlDateTime],
+              [machineId, mysqlDateTime],
               (err5, beaconResults) => {
                 if (err5) return res.status(500).json({ error: "Database error" });
 
