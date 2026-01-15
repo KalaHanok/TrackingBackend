@@ -230,6 +230,33 @@ router.post("/", upload.single("image"), (req, res) => {
     );
 });
 
+// ================= WEEKLY WORK HOURS (NEW API) =================
+router.get("/:id/weekly-hours", (req, res) => {
+    const workerId = req.params.id;
+
+    const sql = `
+      SELECT 
+        DAYNAME(work_date) AS day,
+        work_date,
+        SUM(hours_worked) AS hours
+      FROM work_logs
+      WHERE worker_id = ?
+        AND YEARWEEK(work_date, 1) = YEARWEEK(CURDATE(), 1)
+      GROUP BY work_date
+      ORDER BY work_date
+    `;
+
+    db.query(sql, [workerId], (err, results) => {
+        if (err) {
+            console.error("❌ Weekly hours error:", err);
+            return res.status(500).json({ error: "Database error" });
+        }
+
+        res.json(results);
+    });
+});
+
+
 // ==================== MQTT INTEGRATION ==================== //
 
 const client = mqtt.connect("mqtt://broker.hivemq.com:1883");
