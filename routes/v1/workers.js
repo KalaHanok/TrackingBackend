@@ -262,18 +262,18 @@ router.get("/:id/weekly-hours", (req, res) => {
 const client = mqtt.connect("mqtt://broker.hivemq.com:1883");
 
 const gatewayCoords = {
-    "GW_B_ZONE_B": { lat: 15.5869, lon: 79.8222694444 },
-    "GW_C_ZONE_C": { lat: 15.5863833333, lon: 79.825 },
-    'GW_A_ENTRANCE': { lat: 15.5862416667, lon: 79.8273194444 },
-    'GW_D_ZONE_D': { lat: 15.5860916667, lon: 79.830075 },
-    'GW_E_ZONE_E': { lat: 15.5846722222, lon: 79.8278944444 },
-    "GW_F_ZONE_F": { lat: 15.5841944444, lon: 79.825075 },
-    "GW_G_ZONE_G": { lat: 15.5853583333, lon: 79.8240361111 },
+    // "GW_B_ZONE_B": { lat: 15.5869, lon: 79.8222694444 },
+    // "GW_C_ZONE_C": { lat: 15.5863833333, lon: 79.825 },
+    // 'GW_A_ENTRANCE': { lat: 15.5862416667, lon: 79.8273194444 },
+    // 'GW_D_ZONE_D': { lat: 15.5860916667, lon: 79.830075 },
+    // 'GW_E_ZONE_E': { lat: 15.5846722222, lon: 79.8278944444 },
+    // "GW_F_ZONE_F": { lat: 15.5841944444, lon: 79.825075 },
+    // "GW_G_ZONE_G": { lat: 15.5853583333, lon: 79.8240361111 },
 
-    //   "GW_G_ZONE_G": { lat: 15.58675, lon: 79.82731 },
-    //   "GW_B_ZONE_B": { lat: 15.58625, lon: 79.82715 },
-    //   'GW_E_ZONE_E': {lat: 15.58626, lon: 79.82732 },
-    //   'GW_A_ENTRANCE': {lat: 15.58674, lon: 79.82786 },
+      "GW_G_ZONE_G": { lat: 15.58675, lon: 79.82731 },
+      "GW_B_ZONE_B": { lat: 15.58625, lon: 79.82715 },
+      'GW_E_ZONE_E': {lat: 15.58626, lon: 79.82732 },
+      'GW_A_ENTRANCE': {lat: 15.58674, lon: 79.82786 },
 };
 
 // RSSI → distance
